@@ -1,4 +1,5 @@
 import { ProductGrid } from "@/components/products/product-grid";
+import { ProductGridSkeleton } from "@/components/products/product-skeleton-grid";
 import { Suspense } from "react";
 
 export default function HomePage() {
@@ -48,13 +49,7 @@ export default function HomePage() {
           </div>
           <p className="m-0 text-sm text-muted">كل قطعة بتتعمل طازة علشانك.</p>
         </div>
-        <Suspense
-          fallback={
-            <p className="text-sm text-muted" role="status">
-              بنجهز منتجاتنا...
-            </p>
-          }
-        >
+        <Suspense fallback={<ProductGridSkeleton />}>
           <ProductGrid />
         </Suspense>
       </section>

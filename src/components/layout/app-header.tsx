@@ -2,18 +2,28 @@
 
 import Link from "next/link";
 import { useState } from "react";
+import { AnimatePresence, motion } from "motion/react";
 import { selectCartItemCount, useCartStore } from "@/store/cart-store";
 import logo from "@/app/logo.png";
 import Image from "next/image";
+import { Menu, ShoppingCart, X } from "lucide-react";
 
 export default function AppHeader() {
   const [menuOpen, setMenuOpen] = useState(false);
+
   const cartItemCount = useCartStore(selectCartItemCount);
   const hasHydrated = useCartStore((state) => state.hasHydrated);
 
+  const navLinks = [
+    { href: "/", label: "الرئيسية" },
+    { href: "/filled-donuts", label: "الدونات المحشية" },
+    { href: "/mini-donuts", label: "الميني دونات" },
+  ];
+
   return (
-    <header className="sticky top-0 z-10 border-b border-line bg-page/95">
-      <div className="mx-auto flex min-h-16 w-[calc(100%-2rem)] max-w-6xl items-center justify-between gap-6 sm:min-h-[76px]">
+    <header className="sticky top-0 z-50 border-b border-line bg-page/95 backdrop-blur-md">
+      <div className="relative mx-auto flex min-h-16 w-[calc(100%-2rem)] max-w-6xl items-center justify-between gap-4 sm:min-h-[76px]">
+        {/* Logo */}
         <Link
           className="inline-flex items-center gap-2.5 whitespace-nowrap text-[15px] font-bold sm:text-[17px]"
           href="/"
@@ -24,67 +34,106 @@ export default function AppHeader() {
             جولدن جليز <b className="text-brand">دونات</b>
           </span>
         </Link>
-        <button
-          className="flex size-10 cursor-pointer flex-col items-center justify-center gap-[5px] border-0 bg-transparent text-warm sm:hidden"
-          type="button"
-          aria-label={menuOpen ? "إغلاق القائمة" : "فتح القائمة"}
-          aria-expanded={menuOpen}
-          onClick={() => setMenuOpen((open) => !open)}
-        >
-          <span className="h-0.5 w-5 bg-current" />
-          <span className="h-0.5 w-5 bg-current" />
-        </button>
+
+        {/* Desktop Navigation */}
         <nav
-          className={`${menuOpen ? "flex" : "hidden"} absolute inset-x-0 top-full flex-col gap-0 border-b border-line bg-page px-4 pb-3 text-sm text-[#62524b] sm:static sm:flex sm:flex-row sm:items-center sm:gap-8 sm:border-0 sm:bg-transparent sm:p-0`}
+          className="hidden items-center gap-8 text-sm text-[#62524b] sm:flex"
           aria-label="القائمة الرئيسية"
         >
-          <Link
-            className="py-3 hover:text-brand sm:py-0"
-            href="/"
-            onClick={() => setMenuOpen(false)}
-          >
-            الرئيسية
-          </Link>
-          <Link
-            className="py-3 hover:text-brand sm:py-0"
-            href="/filled-donuts"
-            onClick={() => setMenuOpen(false)}
-          >
-            الدونات المحشية
-          </Link>
-          <Link
-            className="py-3 hover:text-brand sm:py-0"
-            href="/mini-donuts"
-            onClick={() => setMenuOpen(false)}
-          >
-            الميني دونات
-          </Link>
-          <Link
-            className="inline-flex items-center gap-2 py-3 text-ink sm:py-0"
-            href="/cart"
-            onClick={() => setMenuOpen(false)}
-          >
-            <svg
-              className="size-[21px] fill-none stroke-current stroke-[1.6]"
-              aria-hidden="true"
-              viewBox="0 0 24 24"
+          {navLinks.map((link) => (
+            <Link
+              key={link.href}
+              href={link.href}
+              className="transition-colors hover:text-brand"
             >
-              <path d="M3 4h2l2.2 10.1a2 2 0 0 0 2 1.6h8.5a2 2 0 0 0 1.9-1.4L21 8H6" />
-              <circle cx="10" cy="20" r="1" />
-              <circle cx="18" cy="20" r="1" />
-            </svg>
-            <span>السلة</span>
-            {hasHydrated && cartItemCount > 0 && (
-              <span
-                className="grid min-h-[22px] min-w-[22px] place-items-center rounded-full bg-brand-light px-1 text-xs font-bold text-brand"
-                aria-label={`${cartItemCount} منتجات`}
-              >
-                {cartItemCount}
-              </span>
-            )}
-          </Link>
+              {link.label}
+            </Link>
+          ))}
         </nav>
+
+        {/* Actions */}
+        <div className="flex items-center">
+          {/* Cart */}
+          <Link
+            className="relative inline-flex size-10 items-center justify-center rounded-lg text-ink transition-colors hover:bg-brand/10 hover:text-brand"
+            href="/cart"
+            aria-label="سلة التسوق"
+          >
+            <ShoppingCart size={21} />
+
+            <AnimatePresence>
+              {hasHydrated && cartItemCount > 0 && (
+                <motion.span
+                  key="cart-count"
+                  initial={{ opacity: 0, scale: 0.5 }}
+                  animate={{ opacity: 1, scale: 1 }}
+                  exit={{ opacity: 0, scale: 0.5 }}
+                  transition={{ duration: 0.2 }}
+                  className="absolute -right-1 -top-1 grid min-h-[20px] min-w-[20px] place-items-center rounded-full bg-brand-light px-1 text-[11px] font-bold text-brand"
+                >
+                  {cartItemCount}
+                </motion.span>
+              )}
+            </AnimatePresence>
+          </Link>
+
+          {/* Mobile Menu Button */}
+          <motion.button
+            type="button"
+            whileTap={{ scale: 0.9 }}
+            className="flex size-10 items-center justify-center rounded-lg bg-transparent text-warm transition-colors hover:bg-brand/10 sm:hidden"
+            aria-label={menuOpen ? "إغلاق القائمة" : "فتح القائمة"}
+            aria-expanded={menuOpen}
+            onClick={() => setMenuOpen((open) => !open)}
+          >
+            <AnimatePresence mode="wait" initial={false}>
+              <motion.span
+                key={menuOpen ? "close" : "menu"}
+                initial={{ opacity: 0, rotate: -90, scale: 0.7 }}
+                animate={{ opacity: 1, rotate: 0, scale: 1 }}
+                exit={{ opacity: 0, rotate: 90, scale: 0.7 }}
+                transition={{ duration: 0.15 }}
+                className="flex"
+              >
+                {menuOpen ? <X size={23} /> : <Menu size={23} />}
+              </motion.span>
+            </AnimatePresence>
+          </motion.button>
+        </div>
       </div>
+
+      {/* Mobile Navigation */}
+      <AnimatePresence>
+        {menuOpen && (
+          <motion.nav
+            initial={{ opacity: 0, height: 0 }}
+            animate={{ opacity: 1, height: "auto" }}
+            exit={{ opacity: 0, height: 0 }}
+            transition={{ duration: 0.25, ease: "easeInOut" }}
+            className="overflow-hidden border-t border-line bg-page sm:hidden"
+            aria-label="القائمة الرئيسية"
+          >
+            <div className="mx-auto flex w-[calc(100%-2rem)] max-w-6xl flex-col py-2">
+              {navLinks.map((link, index) => (
+                <motion.div
+                  key={link.href}
+                  initial={{ opacity: 0, x: 15 }}
+                  animate={{ opacity: 1, x: 0 }}
+                  transition={{ delay: index * 0.05, duration: 0.2 }}
+                >
+                  <Link
+                    href={link.href}
+                    onClick={() => setMenuOpen(false)}
+                    className="block border-b border-line/70 py-3 text-sm text-[#62524b] transition-colors last:border-0 hover:text-brand"
+                  >
+                    {link.label}
+                  </Link>
+                </motion.div>
+              ))}
+            </div>
+          </motion.nav>
+        )}
+      </AnimatePresence>
     </header>
   );
 }
