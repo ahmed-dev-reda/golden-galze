@@ -1,11 +1,11 @@
 "use client";
+
+import { AnimatePresence, motion } from "motion/react";
 import { formatPrice, productName } from "@/lib/format";
 import type { Donut } from "@/lib/types";
 import { useState } from "react";
-import {
-  MAX_CART_QUANTITY,
-  useCartStore,
-} from "@/store/cart-store";
+import { MAX_CART_QUANTITY, useCartStore } from "@/store/cart-store";
+import { Check, ShoppingCart } from "lucide-react";
 
 export function ProductCard({ donut }: { donut: Donut }) {
   const addItem = useCartStore((state) => state.addItem);
@@ -15,7 +15,10 @@ export function ProductCard({ donut }: { donut: Donut }) {
   const increaseItem = useCartStore((state) => state.increaseItem);
   const decreaseItem = useCartStore((state) => state.decreaseItem);
   const hasHydrated = useCartStore((state) => state.hasHydrated);
+
   const [selectedQuantity, setSelectedQuantity] = useState(1);
+  const [isAdded, setIsAdded] = useState(false);
+
   const quantity = cartItem?.quantity ?? selectedQuantity;
 
   function decreaseQuantity() {
@@ -31,21 +34,46 @@ export function ProductCard({ donut }: { donut: Donut }) {
       increaseItem(donut.id);
       return;
     }
-    setSelectedQuantity((current) =>
-      Math.min(MAX_CART_QUANTITY, current + 1),
+    setSelectedQuantity((current) => Math.min(MAX_CART_QUANTITY, current + 1));
+  }
+
+  function handleAddToCart() {
+    if (!hasHydrated) return;
+
+    setIsAdded(true);
+
+    addItem(
+      {
+        id: donut.id,
+        name: donut.name,
+        price: donut.price,
+        image_url: donut.imageUrl,
+      },
+      selectedQuantity,
     );
+
+    setTimeout(() => setIsAdded(false), 700);
   }
 
   return (
-    <article className="min-w-0 overflow-hidden rounded-[11px] border border-line bg-white transition hover:-translate-y-[3px] hover:shadow-[0_9px_24px_#563c3212]">
+    <motion.article
+      initial={{ opacity: 0, y: 20 }}
+      animate={{ opacity: 1, y: 0 }}
+      transition={{
+        duration: 0.3,
+        ease: "easeOut",
+      }}
+      className="min-w-0 overflow-hidden rounded-[11px] bg-white shadow"
+    >
       <div className="relative aspect-[1.15] overflow-hidden bg-[#f9f4f0]">
         {donut.imageUrl ? (
-          // eslint-disable-next-line @next/next/no-img-element
-          <img
-            className="h-full w-full object-cover"
+          <motion.img
             src={donut.imageUrl}
             alt={productName(donut.name)}
             loading="lazy"
+            className="h-full w-full object-cover"
+            whileHover={{ scale: 1.02 }}
+            transition={{ duration: 0.5, ease: "easeOut" }}
           />
         ) : (
           <div
@@ -56,71 +84,95 @@ export function ProductCard({ donut }: { donut: Donut }) {
           </div>
         )}
       </div>
+
       <div className="p-2.5 sm:p-3.5">
         <div className="flex flex-col items-start justify-between gap-0.5 sm:flex-row sm:gap-2">
           <h3 className="m-0 text-sm font-semibold sm:text-base">
             {productName(donut.name)}
           </h3>
+
           <span className="shrink-0 text-[13px] font-bold text-brand sm:text-sm">
             {formatPrice(donut.price)}
           </span>
         </div>
-        <div className="mt-2.5 flex items-center justify-between gap-2 ">
+
+        <div className="mt-2.5 flex items-center justify-between gap-2 flex-wrap">
           <div
-            className="flex h-[35px] items-center gap-1.5 rounded-md border border-line px-1.5 sm:gap-3"
+            className="flex h-[35px] items-center max-[300px]:mx-auto gap-1.5 rounded-md border border-line px-1.5 sm:gap-3"
             aria-label="اختار الكمية"
           >
-            <button
-              className="h-7 w-5 border-0 bg-transparent text-xl text-warm cursor-pointer disabled:cursor-not-allowed disabled:opacity-40"
+            <motion.button
               type="button"
+              whileTap={{ scale: 0.8 }}
+              className="h-7 w-5 border-0 bg-transparent text-xl text-warm cursor-pointer disabled:cursor-not-allowed disabled:opacity-40"
               onClick={decreaseQuantity}
               disabled={quantity <= 1}
               aria-label="قلل الكمية"
             >
               −
-            </button>
-            <span className="min-w-3.5 text-center text-[13px]">
-              {quantity}
-            </span>
-            <button
-              className="h-7 w-5 border-0 bg-transparent text-xl text-warm cursor-pointer disabled:cursor-not-allowed disabled:opacity-40"
+            </motion.button>
+
+            <AnimatePresence mode="popLayout" initial={false}>
+              <motion.span
+                key={quantity}
+                initial={{ opacity: 0, y: -8 }}
+                animate={{ opacity: 1, y: 0 }}
+                exit={{ opacity: 0, y: 8 }}
+                transition={{ duration: 0.15 }}
+                className="min-w-3.5 text-center text-[13px]"
+              >
+                {quantity}
+              </motion.span>
+            </AnimatePresence>
+
+            <motion.button
               type="button"
+              whileTap={{ scale: 0.8 }}
+              className="h-7 w-5 border-0 bg-transparent text-xl text-warm cursor-pointer disabled:cursor-not-allowed disabled:opacity-40"
               onClick={increaseQuantity}
               disabled={quantity >= MAX_CART_QUANTITY}
               aria-label="زود الكمية"
             >
               +
-            </button>
+            </motion.button>
           </div>
-          {cartItem ? (
-            <span
-              className="inline-flex min-h-[35px] items-center justify-center rounded-md bg-brand-light px-2 text-xs font-semibold text-brand sm:px-3 sm:text-[13px]"
-              role="status"
-            >
-              موجود في السلة
-            </span>
-          ) : (
-            <button
-              type="button"
-              disabled={!hasHydrated}
-              onClick={() => {
-                addItem(
-                  {
-                    id: donut.id,
-                    name: donut.name,
-                    price: donut.price,
-                    image_url: donut.imageUrl,
-                  },
-                  selectedQuantity,
-                );
-              }}
-              className="inline-flex min-h-[35px] items-center justify-center rounded-md bg-brand px-2 text-xs font-semibold text-white sm:px-3 sm:text-[13px] cursor-pointer disabled:cursor-not-allowed disabled:opacity-50"
-            >
-              ضيف للسلة
-            </button>
-          )}
+
+          <div className="grid place-items-center">
+            <AnimatePresence mode="wait" initial={false}>
+              {isAdded ? (
+                <motion.span
+                  key="added"
+                  initial={{ opacity: 0, scale: 0.5, rotate: -45 }}
+                  animate={{ opacity: 1, scale: 1, rotate: 0 }}
+                  exit={{ opacity: 0, scale: 0.5 }}
+                  transition={{ duration: 0.2, ease: "easeOut" }}
+                  className="rounded p-1 text-brand"
+                  role="status"
+                >
+                  <Check size={19} />
+                </motion.span>
+              ) : (
+                <motion.button
+                  key="cart"
+                  type="button"
+                  disabled={!hasHydrated}
+                  initial={{ opacity: 0, scale: 0.5 }}
+                  animate={{ opacity: 1, scale: 1 }}
+                  exit={{ opacity: 0, scale: 0.5 }}
+                  whileHover={{ scale: 1.1 }}
+                  whileTap={{ scale: 0.85 }}
+                  transition={{ duration: 0.2, ease: "easeOut" }}
+                  onClick={handleAddToCart}
+                  className="cursor-pointer rounded p-1 transition-colors hover:bg-brand/20 hover:text-brand disabled:cursor-not-allowed disabled:opacity-40"
+                  aria-label="أضف إلى السلة"
+                >
+                  <ShoppingCart size={19} />
+                </motion.button>
+              )}
+            </AnimatePresence>
+          </div>
         </div>
       </div>
-    </article>
+    </motion.article>
   );
 }

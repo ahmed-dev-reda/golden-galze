@@ -3,6 +3,8 @@
 import Link from "next/link";
 import { useState } from "react";
 import { selectCartItemCount, useCartStore } from "@/store/cart-store";
+import logo from "@/app/logo.png";
+import Image from "next/image";
 
 export default function AppHeader() {
   const [menuOpen, setMenuOpen] = useState(false);
@@ -17,12 +19,7 @@ export default function AppHeader() {
           href="/"
           aria-label="جولدن جليز دونات - الرئيسية"
         >
-          <span
-            className="grid size-[35px] place-items-center rounded-full bg-brand-accent text-xl text-white sm:size-[38px]"
-            aria-hidden="true"
-          >
-            ج
-          </span>
+          <Image src={logo} alt="G" width={40} height={40} />
           <span>
             جولدن جليز <b className="text-brand">دونات</b>
           </span>

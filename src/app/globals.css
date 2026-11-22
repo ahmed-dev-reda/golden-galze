@@ -1,19 +1,25 @@
 @import "tailwindcss";
 
 :root {
-  --brand-primary: #cb607a;
-  --brand-primary-hover: #b94f69;
-  --brand-light: #fff0f2;
-  --brand-accent: #e9859b;
-  --page-background: #fffdf9;
-  --text-primary: #34251f;
-  --text-secondary: #82736b;
-  --text-warm: #6a4537;
-  --border-default: #eee7e1;
-  --border-input: #e8dfd9;
-  --surface-soft: #f5efea;
-}
+  /* Brand */
+  --brand-primary: #5b382a;
+  --brand-primary-hover: #713f2d;
+  --brand-light: #f4f0ee;
+  --brand-accent: #d99a83;
 
+  /* Backgrounds */
+  --page-background: #fffaf5;
+  --surface-soft: #f4ebe4;
+
+  /* Text */
+  --text-primary: #34251f;
+  --text-secondary: #88766c;
+  --text-warm: #6a4537;
+
+  /* Borders */
+  --border-default: #e9ded5;
+  --border-input: #ded0c6;
+}
 @theme inline {
   --color-brand: var(--brand-primary);
   --color-brand-hover: var(--brand-primary-hover);
