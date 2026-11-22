@@ -1,1 +1,29 @@
 @import "tailwindcss";
+
+:root {
+  --brand-primary: #cb607a;
+  --brand-primary-hover: #b94f69;
+  --brand-light: #fff0f2;
+  --brand-accent: #e9859b;
+  --page-background: #fffdf9;
+  --text-primary: #34251f;
+  --text-secondary: #82736b;
+  --text-warm: #6a4537;
+  --border-default: #eee7e1;
+  --border-input: #e8dfd9;
+  --surface-soft: #f5efea;
+}
+
+@theme inline {
+  --color-brand: var(--brand-primary);
+  --color-brand-hover: var(--brand-primary-hover);
+  --color-brand-light: var(--brand-light);
+  --color-brand-accent: var(--brand-accent);
+  --color-page: var(--page-background);
+  --color-ink: var(--text-primary);
+  --color-muted: var(--text-secondary);
+  --color-warm: var(--text-warm);
+  --color-line: var(--border-default);
+  --color-field-line: var(--border-input);
+  --color-soft-surface: var(--surface-soft);
+}

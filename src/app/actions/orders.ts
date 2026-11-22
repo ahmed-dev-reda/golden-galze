@@ -1,263 +1,431 @@
 "use server";
 
-import { cookies } from "next/headers";
-import {
-  ALLOWED_SCREENSHOT_TYPES,
-  MAX_CART_QUANTITY,
-  MAX_SCREENSHOT_SIZE,
-} from "@/lib/constants";
-import {
-  createPaymentProofAccessToken,
-  getPaymentProofCookieName,
-  isPaymentProofAccessConfigured,
-  PAYMENT_PROOF_ACCESS_SECONDS,
-} from "@/lib/payment-proof-access";
-import { createServerSupabase } from "@/lib/supabase";
+import { randomUUID } from "node:crypto";
+import { createClient } from "@/utils/supabase/server";
 
-type RequestedItem = { id: string; quantity: number };
+const uuidPattern =
+  /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+const phonePattern = /^[+]?[0-9]{8,15}$/;
+const maxUploadSize = 5 * 1024 * 1024;
+const uploadTypes = {
+  "image/jpeg": "jpg",
+  "image/png": "png",
+  "image/webp": "webp",
+} as const;
 
-export type OrderActionResult =
-  | { orderId: string; total: number; proofWarning?: boolean }
-  | { error: string };
-
-export type TrackedOrderItem = {
-  name: string;
-  quantity: number;
-  unit_price: number;
-};
+export type CreateOrderResult =
+  | {
+      ok: true;
+      orderId: string;
+      subtotal: number;
+      deliveryFee: number;
+      total: number;
+      paymentMethod: "cash" | "instapay";
+      proofUploaded: boolean;
+    }
+  | {
+      ok: false;
+      message: string;
+    }
+  | {
+      ok: false;
+      orderCreated: true;
+      orderId: string;
+      subtotal: number;
+      deliveryFee: number;
+      total: number;
+      paymentMethod: "instapay";
+      message: string;
+    };
 
 export type TrackedOrder = {
-  id: string;
-  created_at: string;
+  orderId: string;
   status: string;
-  delivered_at: string | null;
   total: number;
-  payment_method: string;
-  payment_proof: boolean;
-  items: TrackedOrderItem[];
+  paymentMethod: string;
+  paymentProof: boolean;
+  createdAt: string;
+  items: Array<{
+    name: string;
+    quantity: number;
+    unitPrice: number;
+  }>;
 };
 
 export type TrackOrderResult =
-  | { order: TrackedOrder }
-  | { error: "invalid" | "unavailable" };
+  | { ok: true; order: TrackedOrder }
+  | { ok: false; message: string };
 
-const PAYMENT_PROOF_BUCKET = "payment_proof";
+type OrderItemInput = { id: string; quantity: number };
 
-function text(form: FormData, key: string): string {
-  const value = form.get(key);
-  return typeof value === "string" ? value.trim() : "";
+function field(formData: FormData, name: string): string | null {
+  const value = formData.get(name);
+  return typeof value === "string" ? value.trim() : null;
 }
 
-function failure(error: string): OrderActionResult {
-  return { error };
+function normalizePhone(value: string): string {
+  return value
+    .replace(/[٠-٩۰-۹]/g, (digit) =>
+      String(digit.charCodeAt(0) - (digit >= "۰" ? 1776 : 1632)),
+    )
+    .replace(/[\s()-]/g, "");
 }
 
-async function hasValidImageSignature(file: File): Promise<boolean> {
-  const bytes = new Uint8Array(await file.slice(0, 12).arrayBuffer());
-  if (file.type === "image/png") {
-    return (
-      bytes.length >= 8 &&
-      bytes[0] === 0x89 &&
-      bytes[1] === 0x50 &&
-      bytes[2] === 0x4e &&
-      bytes[3] === 0x47 &&
-      bytes[4] === 0x0d &&
-      bytes[5] === 0x0a &&
-      bytes[6] === 0x1a &&
-      bytes[7] === 0x0a
-    );
-  }
-  if (file.type === "image/jpeg") {
-    return (
-      bytes.length >= 3 &&
-      bytes[0] === 0xff &&
-      bytes[1] === 0xd8 &&
-      bytes[2] === 0xff
-    );
-  }
-  return (
-    file.type === "image/webp" &&
-    bytes.length >= 12 &&
-    String.fromCharCode(...bytes.slice(0, 4)) === "RIFF" &&
-    String.fromCharCode(...bytes.slice(8, 12)) === "WEBP"
-  );
-}
+function parseItems(value: string | null): OrderItemInput[] | null {
+  if (!value) return null;
 
-function parseItems(value: string): RequestedItem[] | null {
+  let parsed: unknown;
   try {
-    const parsed: unknown = JSON.parse(value);
-    if (!Array.isArray(parsed) || parsed.length < 1 || parsed.length > 30)
-      return null;
-    const items: RequestedItem[] = [];
-    const seen = new Set<string>();
-    for (const item of parsed) {
-      if (
-        typeof item !== "object" ||
-        item === null ||
-        typeof item.id !== "string" ||
-        !/^[0-9a-f-]{36}$/i.test(item.id) ||
-        !Number.isInteger(item.quantity) ||
-        item.quantity < 1 ||
-        item.quantity > MAX_CART_QUANTITY ||
-        seen.has(item.id)
-      )
-        return null;
-      seen.add(item.id);
-      items.push({ id: item.id, quantity: item.quantity });
-    }
-    return items;
+    parsed = JSON.parse(value);
   } catch {
     return null;
   }
+
+  if (!Array.isArray(parsed) || parsed.length < 1 || parsed.length > 30) {
+    return null;
+  }
+
+  const items: OrderItemInput[] = [];
+  const ids = new Set<string>();
+
+  for (const entry of parsed as unknown[]) {
+    if (
+      !isRecord(entry) ||
+      typeof entry.id !== "string" ||
+      !uuidPattern.test(entry.id) ||
+      typeof entry.quantity !== "number" ||
+      !Number.isInteger(entry.quantity) ||
+      entry.quantity < 1 ||
+      entry.quantity > 50 ||
+      ids.has(entry.id)
+    ) {
+      return null;
+    }
+
+    ids.add(entry.id);
+    items.push({ id: entry.id, quantity: entry.quantity });
+  }
+
+  return items;
 }
 
-export async function createOrder(form: FormData): Promise<OrderActionResult> {
-  const name = text(form, "name");
-  const phone = text(form, "phone");
-  const alternatePhone = text(form, "alternatePhone");
-  const city = text(form, "city");
-  const address = text(form, "address");
-  const notes = text(form, "notes");
-  const paymentMethod = text(form, "paymentMethod");
-  const items = parseItems(text(form, "items"));
-  const normalizedPhone = phone.replace(/[\s()-]/g, "");
-  const normalizedAlternatePhone = alternatePhone.replace(/[\s()-]/g, "");
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
+}
+
+function rpcRow(value: unknown): Record<string, unknown> | null {
+  const row = Array.isArray(value) ? value[0] : value;
+  return isRecord(row) ? row : null;
+}
+
+function amount(value: unknown): number | null {
+  const parsed =
+    typeof value === "number"
+      ? value
+      : typeof value === "string"
+        ? Number(value)
+        : Number.NaN;
+  return Number.isFinite(parsed) && parsed >= 0 ? parsed : null;
+}
+
+function mapCreateError(message: string): string {
+  if (message.includes("customer_blocked")) {
+    return "لا يمكن استلام الطلب لهذا الرقم لانه محظور. تواصل مع المتجر للمساعدة.";
+  }
+  if (message.includes("product_unavailable")) {
+    return "أحد المنتجات في سلتك لم يعد متاحًا. حدّث السلة وحاول مرة أخرى.";
+  }
+  if (message.includes("ordering_disabled")) {
+    return "المتجر لا يستقبل الطلبات حاليًا.";
+  }
+  if (message.includes("delivery_location_unavailable")) {
+    return "منطقة التوصيل المختارة غير متاحة حاليًا.";
+  }
+  if (message.includes("payment_method_disabled")) {
+    return "طريقة الدفع المختارة غير متاحة حاليًا.";
+  }
+  if (message.includes("invalid_customer_details")) {
+    return "راجع بيانات الاسم ورقم الهاتف والعنوان وحاول مرة أخرى.";
+  }
+  if (
+    message.includes("invalid_order_items") ||
+    message.includes("duplicate_order_items")
+  ) {
+    return "محتويات السلة غير صالحة. حدّث السلة وحاول مرة أخرى.";
+  }
+  if (
+    message.includes("store_settings_missing") ||
+    message.includes("invalid_delivery_fee_configuration")
+  ) {
+    return "تعذر التحقق من إعدادات التوصيل. حاول مرة أخرى لاحقًا.";
+  }
+  return "تعذر تسجيل الطلب. حاول مرة أخرى.";
+}
+
+function parseTrackedOrder(value: unknown): TrackedOrder | null {
+  const row = rpcRow(value);
+  if (!row) return null;
+
+  const {
+    order_id,
+    status,
+    total,
+    payment_method,
+    payment_proof,
+    created_at,
+    items,
+  } = row;
+  const parsedTotal = amount(total);
+  if (
+    typeof order_id !== "string" ||
+    !uuidPattern.test(order_id) ||
+    typeof status !== "string" ||
+    parsedTotal === null ||
+    typeof payment_method !== "string" ||
+    typeof payment_proof !== "boolean" ||
+    typeof created_at !== "string" ||
+    !Array.isArray(items)
+  ) {
+    return null;
+  }
+
+  const parsedItems: TrackedOrder["items"] = [];
+  for (const item of items) {
+    if (!isRecord(item)) return null;
+    const unitPrice = amount(item.unitPrice);
+    if (
+      typeof item.name !== "string" ||
+      unitPrice === null ||
+      typeof item.quantity !== "number" ||
+      !Number.isFinite(item.quantity) ||
+      !Number.isInteger(item.quantity) ||
+      item.quantity < 1
+    ) {
+      return null;
+    }
+    parsedItems.push({
+      name: item.name,
+      quantity: item.quantity,
+      unitPrice,
+    });
+  }
+
+  return {
+    orderId: order_id,
+    status,
+    total: parsedTotal,
+    paymentMethod: payment_method,
+    paymentProof: payment_proof,
+    createdAt: created_at,
+    items: parsedItems,
+  };
+}
+
+export async function createOrder(
+  formData: FormData,
+): Promise<CreateOrderResult> {
+  const name = field(formData, "name");
+  const phone = field(formData, "phone");
+  const alternatePhone = field(formData, "alternatePhone") ?? "";
+  const city = field(formData, "city");
+  const address = field(formData, "address");
+  const notes = field(formData, "notes") ?? "";
+  const paymentMethod = field(formData, "paymentMethod");
+  const items = parseItems(field(formData, "items"));
+  const normalizedPhone = phone ? normalizePhone(phone) : "";
+  const normalizedAlternatePhone = normalizePhone(alternatePhone);
 
   if (
+    !name ||
     name.length < 2 ||
     name.length > 120 ||
-    !/^\+?[0-9]{8,15}$/.test(normalizedPhone) ||
-    (alternatePhone && !/^\+?[0-9]{8,15}$/.test(normalizedAlternatePhone)) ||
-    city.length < 2 ||
+    !phonePattern.test(normalizedPhone) ||
+    (normalizedAlternatePhone !== "" &&
+      !phonePattern.test(normalizedAlternatePhone)) ||
+    !city ||
     city.length > 100 ||
+    !address ||
     address.length < 8 ||
     address.length > 500 ||
     notes.length > 500 ||
-    (paymentMethod !== "cash" && paymentMethod !== "instapay") ||
-    !items
-  )
-    return failure("راجع البيانات المطلوبة وتأكد إنها مكتوبة بشكل صحيح.");
+    !items ||
+    (paymentMethod !== "cash" && paymentMethod !== "instapay")
+  ) {
+    return {
+      ok: false,
+      message: "راجع البيانات المدخلة ومحتويات السلة وحاول مرة أخرى.",
+    };
+  }
 
   let screenshot: File | null = null;
+  let extension: string | null = null;
   if (paymentMethod === "instapay") {
-    const file = form.get("screenshot");
-    if (!(file instanceof File) || !file.size)
-      return failure("ارفع صورة التحويل علشان نكمل الطلب.");
+    const file = formData.get("screenshot");
+    const fileExtension =
+      file &&
+      typeof file !== "string" &&
+      Object.prototype.hasOwnProperty.call(uploadTypes, file.type)
+        ? uploadTypes[file.type as keyof typeof uploadTypes]
+        : null;
     if (
-      !ALLOWED_SCREENSHOT_TYPES.includes(file.type) ||
-      file.size > MAX_SCREENSHOT_SIZE
+      !file ||
+      typeof file === "string" ||
+      file.size < 1 ||
+      file.size > maxUploadSize ||
+      !fileExtension
     ) {
-      return failure(
-        "صورة التحويل لازم تكون PNG أو JPG أو WEBP وبحجم أقل من 5 ميجابايت.",
-      );
+      return {
+        ok: false,
+        message:
+          "ارفع صورة تحويل JPG أو PNG أو WEBP بحجم لا يتجاوز 5 ميجابايت.",
+      };
     }
-    if (!(await hasValidImageSignature(file)))
-      return failure("ملف صورة التحويل غير صالح.");
     screenshot = file;
+    extension = fileExtension;
   }
 
-  let supabase: Awaited<ReturnType<typeof createServerSupabase>>;
-  try {
-    supabase = await createServerSupabase();
-  } catch (error) {
-    console.error("Secure order submission is not configured.", error);
-    return failure("الطلبات غير متاحة حاليًا. يرجى المحاولة لاحقًا.");
+  const supabase = await createClient();
+  const { data, error } = await supabase.rpc("create_guest_order", {
+    p_name: name,
+    p_phone: phone,
+    p_alternate_phone: alternatePhone,
+    p_city: city,
+    p_address: address,
+    p_notes: notes,
+    p_payment_method: paymentMethod,
+    p_items: items,
+  });
+
+  if (error) {
+    console.error("Guest order creation failed.", {
+      code: error.code,
+      message: error.message,
+    });
+    return { ok: false, message: mapCreateError(error.message) };
   }
 
-  const { data: orders, error: orderError } = await supabase.rpc(
-    "orders",
-    {
-      cus: name,
-      p_phone: normalizedPhone,
-      p_alternate_phone: normalizedAlternatePhone,
-      p_city: city,
-      p_address: address,
-      p_notes: notes,
-      p_payment_method: paymentMethod,
-      p_items: items,
-    },
+  const row = rpcRow(data);
+  const orderId = row?.order_id;
+  const subtotal = amount(row?.subtotal);
+  const deliveryFee = amount(row?.delivery_fee);
+  const total = amount(row?.total);
+  if (
+    typeof orderId !== "string" ||
+    !uuidPattern.test(orderId) ||
+    subtotal === null ||
+    deliveryFee === null ||
+    total === null
+  ) {
+    console.error("Guest order RPC returned an invalid response.");
+    return {
+      ok: false,
+      message: "تم إرسال الطلب لكن تعذر قراءة بيانات التأكيد.",
+    };
+  }
+
+  if (paymentMethod === "cash") {
+    return {
+      ok: true,
+      orderId,
+      subtotal,
+      deliveryFee,
+      total,
+      paymentMethod,
+      proofUploaded: false,
+    };
+  }
+
+  const partialResult: CreateOrderResult = {
+    ok: false,
+    orderCreated: true,
+    orderId,
+    subtotal,
+    deliveryFee,
+    total,
+    paymentMethod,
+    message:
+      "تم تسجيل طلبك، لكن تعذر اعتماد صورة التحويل. احتفظ برقم الطلب وتواصل مع المتجر لإكمال الدفع.",
+  };
+  if (!screenshot || !extension) return partialResult;
+
+  const objectPath = `${orderId}/${randomUUID()}.${extension}`;
+  const { error: uploadError } = await supabase.storage
+    .from("payment_proof")
+    .upload(objectPath, screenshot, {
+      contentType: screenshot.type,
+      upsert: false,
+    });
+
+  if (uploadError) {
+    console.error("InstaPay receipt upload failed.", {
+      code: uploadError.name,
+      message: uploadError.message,
+    });
+    return partialResult;
+  }
+
+  const { data: proofMarked, error: markError } = await supabase.rpc(
+    "mark_guest_payment_proof",
+    { p_order_id: orderId },
   );
-  const order = Array.isArray(orders) ? orders[0] : null;
-  if (orderError || !order?.order_id) {
-    const databaseMessage = orderError?.message ?? "";
-    if (databaseMessage.includes("customer_blocked")) {
-      return failure("مش قادرين نستقبل طلبات من رقم الموبايل ده.");
-    }
-    if (databaseMessage.includes("product_unavailable")) {
-      return failure("في منتج أو أكتر مبقاش متاح. حدّث السلة وحاول تاني.");
-    }
-    if (databaseMessage.includes("payment_method_disabled")) {
-      return failure("طريقة الدفع دي مش متاحة حاليًا.");
-    }
-    if (databaseMessage.includes("ordering_disabled")) {
-      return failure("الطلبات متوقفة مؤقتًا. حاول مرة أخرى لاحقًا.");
-    }
-    if (databaseMessage.includes("delivery_location_unavailable")) {
-      return failure("منطقة التوصيل غير متاحة حاليًا. اختار منطقة تانية.");
-    }
-    if (databaseMessage.includes("Could not find the function")) {
-      console.error("Guest checkout database function is not deployed.", orderError);
-      return failure(
-        "إعدادات الطلب غير مكتملة على قاعدة البيانات. يرجى التواصل مع المتجر.",
-      );
-    }
-    console.error("Unable to create guest order.", orderError);
-    return failure("تعذر إنشاء الطلب. حاول تاني.");
+  if (markError || proofMarked !== true) {
+    console.error("InstaPay receipt could not be linked to the order.", {
+      code: markError?.code,
+      message: markError?.message,
+    });
+    return partialResult;
   }
 
-  const orderId = order.order_id as string;
-  const total = Number(order.total);
-  if (screenshot) {
-    const extension =
-      screenshot.type === "image/png"
-        ? "png"
-        : screenshot.type === "image/webp"
-          ? "webp"
-          : "jpg";
-    const uploadedPath = `${orderId}/${crypto.randomUUID()}.${extension}`;
-    const { error } = await supabase.storage
-      .from(PAYMENT_PROOF_BUCKET)
-      .upload(uploadedPath, screenshot, {
-        contentType: screenshot.type,
-        upsert: false,
-      });
-    if (error) {
-      console.error("Unable to upload payment proof.", error);
-      return { orderId, total, proofWarning: true };
-    }
-    const { data: proofMarked, error: proofError } = await supabase.rpc(
-      "mark_guest_payment_proof",
-      { p_order_id: orderId },
-    );
-    if (proofError || proofMarked !== true) {
-      console.error("Unable to mark payment proof as received.", proofError);
-      const { error: removeError } = await supabase.storage
-        .from(PAYMENT_PROOF_BUCKET)
-        .remove([uploadedPath]);
-      if (removeError) {
-        console.error("Unable to remove incomplete payment proof.", removeError);
-      }
-      return { orderId, total, proofWarning: true };
-    }
-    if (isPaymentProofAccessConfigured()) {
-      try {
-        const cookieStore = await cookies();
-        cookieStore.set(
-          getPaymentProofCookieName(orderId),
-          createPaymentProofAccessToken(orderId),
-          {
-            httpOnly: true,
-            secure: process.env.NODE_ENV === "production",
-            sameSite: "strict",
-            maxAge: PAYMENT_PROOF_ACCESS_SECONDS,
-            path: "/order-confirmation",
-          },
-        );
-      } catch (error) {
-        console.error("Unable to grant private payment proof access.", error);
-      }
-    }
+  return {
+    ok: true,
+    orderId,
+    subtotal,
+    deliveryFee,
+    total,
+    paymentMethod,
+    proofUploaded: true,
+  };
+}
+
+export async function trackGuestOrder(
+  formData: FormData,
+): Promise<TrackOrderResult> {
+  const orderId = field(formData, "orderId");
+  const phone = field(formData, "phone");
+  const normalizedPhone = phone ? normalizePhone(phone) : "";
+
+  if (
+    !orderId ||
+    !uuidPattern.test(orderId) ||
+    !phonePattern.test(normalizedPhone)
+  ) {
+    return {
+      ok: false,
+      message: "أدخل رقم الطلب ورقم الهاتف المسجل عليه الطلب بشكل صحيح.",
+    };
   }
 
-  return { orderId, total };
+  const supabase = await createClient();
+  const { data, error } = await supabase.rpc("track_guest_order", {
+    p_order_id: orderId,
+    p_phone: normalizedPhone,
+  });
+
+  if (error) {
+    console.error("Guest order tracking failed.", {
+      code: error.code,
+      message: error.message,
+    });
+    return { ok: false, message: "تعذر جلب حالة الطلب الآن. حاول مرة أخرى." };
+  }
+
+  const order = parseTrackedOrder(data);
+  if (!order) {
+    return {
+      ok: false,
+      message: "لم نعثر على طلب مطابق. راجع رقم الطلب ورقم الهاتف.",
+    };
+  }
+
+  return { ok: true, order };
 }

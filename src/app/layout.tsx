@@ -3,8 +3,8 @@ import { Suspense } from "react";
 import { IBM_Plex_Sans_Arabic } from "next/font/google";
 import "./globals.css";
 import AppHeader from "@/components/layout/app-header";
-import { CartProvider } from "@/components/providers/cart-provider";
 import { SiteFooter } from "@/components/layout/site-footer";
+import { CartHydration } from "@/components/cart/cart-hydration";
 
 const ibm = IBM_Plex_Sans_Arabic({
   weight: ["400", "500", "600", "700"],
@@ -19,14 +19,13 @@ export const metadata: Metadata = {
 export default function RootLayout({ children }: LayoutProps<"/">) {
   return (
     <html lang="ar" dir="rtl" className={`${ibm.className} h-full antialiased`}>
-      <body className="flex min-h-screen flex-col bg-[#fffdf9] text-[#34251f] antialiased">
-        <CartProvider>
-          <AppHeader />
-          <div className="flex-1">{children}</div>
-          <Suspense fallback={null}>
-            <SiteFooter />
-          </Suspense>
-        </CartProvider>
+      <body className="flex min-h-screen flex-col bg-page text-ink antialiased">
+        <CartHydration />
+        <AppHeader />
+        <div className="flex-1">{children}</div>
+        <Suspense fallback={null}>
+          <SiteFooter />
+        </Suspense>
       </body>
     </html>
   );
