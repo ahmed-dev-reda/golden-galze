@@ -1,5 +1,6 @@
 import Link from "next/link";
-
+import logo from "@/app/logo.png";
+import Image from "next/image";
 export function SiteFooter() {
   return (
     <footer className="border-t border-line bg-white">
@@ -9,12 +10,7 @@ export function SiteFooter() {
             className="inline-flex items-center gap-2.5 whitespace-nowrap text-[15px] font-bold sm:text-[17px]"
             href="/"
           >
-            <span
-              className="grid size-[35px] place-items-center rounded-full bg-brand-accent text-xl text-white"
-              aria-hidden="true"
-            >
-              ج
-            </span>
+            <Image src={logo} alt="G" width={40} height={40} />
             <span>
               جولدن جليز <b className="text-brand">دونات</b>
             </span>
