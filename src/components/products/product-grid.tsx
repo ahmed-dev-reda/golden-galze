@@ -1,5 +1,4 @@
 import type { Donut } from "@/lib/types";
-import { cairoBusinessDate } from "@/lib/order-mode";
 import { connection } from "next/server";
 import { createClient } from "@/utils/supabase/server";
 import { ProductCard } from "./product-card";
@@ -13,19 +12,15 @@ type DonutRow = {
   category: string;
   created_at: string;
   today_stock?: number | string | null;
-  stock_date?: string | null;
 };
 
-const baseColumns = "id, name, image_url, price, is_available, category, created_at";
+const columns =
+  "id, name, image_url, price, is_available, category, created_at, today_stock";
 
-function mapDonuts(data: DonutRow[], businessDate: string): Donut[] {
+function mapDonuts(data: DonutRow[]): Donut[] {
   return data.map((donut) => {
-    const stockDate = donut.stock_date ?? null;
-    const rawStock = donut.today_stock;
-    const parsedStock =
-      rawStock === null || rawStock === undefined ? null : Number(rawStock);
-    const todayStock =
-      parsedStock === null || !Number.isFinite(parsedStock) ? null : parsedStock;
+    const raw = donut.today_stock;
+    const parsed = raw === null || raw === undefined ? null : Number(raw);
     return {
       id: donut.id,
       name: donut.name,
@@ -34,53 +29,30 @@ function mapDonuts(data: DonutRow[], businessDate: string): Donut[] {
       isAvailable: donut.is_available,
       category: donut.category,
       createdAt: donut.created_at,
-      stockDate,
-      todayStock,
-      stockIsCurrent: stockDate === businessDate,
+      // today_stock is numeric in Supabase; NULL means no stock available.
+      todayStock: parsed === null || !Number.isFinite(parsed) ? null : parsed,
     };
   });
 }
 
-async function fetchDonuts(category?: string) {
+export async function ProductGrid({ category }: { category?: string }) {
+  await connection();
   const supabase = await createClient();
-  const businessDate = cairoBusinessDate();
-
-  // The daily-stock columns are added manually by the store owner. Fall back
-  // to a stockless catalog (shown as unavailable today) until they exist.
-  const withStock = await (async () => {
-    let query = supabase
-      .from("donuts")
-      .select(`${baseColumns}, today_stock, stock_date`)
-      .eq("is_available", true)
-      .order("created_at", { ascending: false });
-    if (category) query = query.eq("category", category);
-    const { data, error } = await query;
-    if (error) {
-      console.warn("Daily stock columns are not available yet.", error.message);
-      return null;
-    }
-    return mapDonuts(data as DonutRow[], businessDate);
-  })();
-
-  if (withStock) return withStock;
-
   let query = supabase
     .from("donuts")
-    .select(baseColumns)
+    .select(columns)
     .eq("is_available", true)
     .order("created_at", { ascending: false });
+
   if (category) query = query.eq("category", category);
+
   const { data, error } = await query;
   if (error) {
     console.error("Unable to load available donuts.", error);
     throw new Error("تعذر تحميل الدونات. حاول مرة تانية بعد شوية.");
   }
-  return mapDonuts(data as DonutRow[], businessDate);
-}
 
-export async function ProductGrid({ category }: { category?: string }) {
-  await connection();
-  const donuts = await fetchDonuts(category);
+  const donuts = mapDonuts(data as DonutRow[]);
 
   if (donuts.length === 0) {
     return (

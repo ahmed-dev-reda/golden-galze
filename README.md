@@ -43,8 +43,7 @@ NEXT_PUBLIC_NOMINATIM_REVERSE_URL=https://nominatim.openstreetmap.org/reverse
 الأعمدة المطلوبة (يضيفها مالك المشروع يدويًا، لا توجد ملفات migration في هذا المشروع):
 
 ```text
-donuts.today_stock       numeric   -- الكمية المتاحة اليوم (موجود بالفعل)
-donuts.stock_date        date      -- تاريخ المخزون (يُضاف يدويًا)
+donuts.today_stock       numeric   -- الكمية المتاحة اليوم (موجود بالفعل، هو المصدر الوحيد للمخزون)
 orders.order_type        text      -- 'today' | 'preorder'
 orders.fulfillment_date  date      -- تاريخ الاستلام
 ```
@@ -59,7 +58,7 @@ p_order_mode text   -- 'today' | 'preorder'
 - `today` → تاريخ اليوم بتوقيت `Africa/Cairo`.
 - `preorder` → تاريخ الغد بتوقيت `Africa/Cairo`.
 
-على الدالة أن تتحقق من `stock_date = (now() AT TIME ZONE 'Africa/Cairo')::date`، وتقفل صفوف `donuts` (`FOR UPDATE`) وتخصم الكمية ذريًا في وضع `today` فقط، وتحفظ `order_type` و`fulfillment_date`، وترفض أي طلب تتجاوز فيه الكمية المخزون أو تكون `today_stock` فيه `NULL`. لا تُخصم أي كمية في وضع `preorder`. لا يضيف هذا الكود أي أعمدة ولا يعدّل قاعدة البيانات.
+على الدالة أن تقفل صفوف `donuts` (`FOR UPDATE`) وتتحقق من `today_stock` (وأنها ليست `NULL`) وتخصم الكمية ذريًا في وضع `today` فقط، وتحفظ `order_type` و`fulfillment_date`، وترفض أي طلب تتجاوز فيه الكمية المخزون. لا تُخصم أي كمية في وضع `preorder`. لا يعتمد الكود على `stock_date`، ولا يضيف أي أعمدة أو يعدّل قاعدة البيانات.
 
 ## التشغيل
 

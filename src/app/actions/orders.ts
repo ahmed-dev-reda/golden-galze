@@ -1,7 +1,7 @@
 "use server";
 
 import { randomUUID } from "node:crypto";
-import { cairoBusinessDate, isOrderMode } from "@/lib/order-mode";
+import { isOrderMode } from "@/lib/order-mode";
 import { createClient } from "@/utils/supabase/server";
 
 const uuidPattern =
@@ -154,9 +154,6 @@ function mapCreateError(message: string): string {
   ) {
     return "الكمية المطلوبة لم تعد متاحة. راجع السلة وحاول مرة أخرى.";
   }
-  if (message.includes("stock_date_mismatch")) {
-    return "مخزون اليوم غير محدث أو منتهي الصلاحية. حاول مرة أخرى لاحقًا.";
-  }
   if (
     message.includes("invalid_order_mode") ||
     message.includes("mixed_order_items")
@@ -259,7 +256,6 @@ export async function createOrder(
   const orderMode = field(formData, "orderMode");
   const normalizedPhone = phone ? normalizePhone(phone) : "";
   const normalizedAlternatePhone = normalizePhone(alternatePhone);
-  const businessDate = cairoBusinessDate();
 
   if (!isOrderMode(orderMode)) {
     return { ok: false, message: "نوع الطلب غير صالح." };
@@ -327,7 +323,7 @@ export async function createOrder(
   if (orderMode === "today") {
     const { data: stockRows, error: stockError } = await supabase
       .from("donuts")
-      .select("id, today_stock, stock_date, is_available")
+      .select("id, today_stock, is_available")
       .in(
         "id",
         items.map((item) => item.id),
@@ -342,7 +338,6 @@ export async function createOrder(
       (stockRows ?? []).map((row: {
         id: string;
         today_stock: number | string | null;
-        stock_date: string | null;
         is_available: boolean;
       }) => [row.id, row]),
     );
@@ -354,7 +349,6 @@ export async function createOrder(
       const available = raw === null || raw === undefined ? null : Number(raw);
       if (
         !row?.is_available ||
-        row.stock_date !== businessDate ||
         available === null ||
         !Number.isFinite(available) ||
         Math.floor(available) < item.quantity

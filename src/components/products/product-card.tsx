@@ -21,9 +21,10 @@ export function ProductCard({ donut, index }: { donut: Donut; index: number }) {
   const [isAdded, setIsAdded] = useState(false);
 
   const isToday = mode === "today";
-  const todayLimit = donut.stockIsCurrent
-    ? Math.min(MAX_CART_QUANTITY, Math.max(0, Math.floor(donut.todayStock ?? 0)))
-    : 0;
+  const todayLimit = Math.min(
+    MAX_CART_QUANTITY,
+    Math.max(0, Math.floor(donut.todayStock ?? 0)),
+  );
   const maxQuantity = isToday ? todayLimit : MAX_CART_QUANTITY;
   const soldOut = isToday && maxQuantity < 1;
   const quantity = Math.min(
@@ -120,9 +121,9 @@ export function ProductCard({ donut, index }: { donut: Donut; index: number }) {
           aria-live="polite"
         >
           {isToday
-            ? donut.stockIsCurrent
-              ? `الكمية المتاحة: ${todayLimit}`
-              : "الكمية المتاحة غير محددة اليوم"
+            ? donut.todayStock === null
+              ? "لا توجد كمية متاحة اليوم"
+              : `الكمية المتاحة: ${todayLimit}`
             : "حجز لبكرة — متاح بأي كمية"}
         </p>
 
