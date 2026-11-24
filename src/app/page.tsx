@@ -4,6 +4,7 @@ import { ProductGrid } from "@/components/products/product-grid";
 import { ProductGridSkeleton } from "@/components/products/product-skeleton-grid";
 import { Suspense } from "react";
 import { connection } from "next/server";
+import { getPreorderDateOptions } from "@/lib/preorder-dates";
 
 export default function HomePage() {
   return (
@@ -49,7 +50,7 @@ async function HomeContent() {
       <section className="mx-auto w-[calc(100%-2rem)] max-w-6xl pt-4 sm:pt-6">
         <OrderModeSelector
           todayDate={cairoBusinessDate()}
-          tomorrowDate={cairoBusinessDate(1)}
+          preorderDates={getPreorderDateOptions()}
         />
       </section>
       <section

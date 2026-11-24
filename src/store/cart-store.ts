@@ -17,6 +17,8 @@ export type CartItem = {
 export type CartStore = {
   items: CartItem[];
   mode: OrderMode;
+  /** Chosen fulfillment date for preorders (YYYY-MM-DD), computed by the server. */
+  preorderDate: string | null;
   hasHydrated: boolean;
   addItem: (
     item: Omit<CartItem, "quantity" | "stockLimit">,
@@ -29,6 +31,7 @@ export type CartStore = {
   updateQuantity: (id: string, quantity: number) => void;
   clearCart: () => void;
   setMode: (mode: OrderMode) => void;
+  setPreorderDate: (value: string | null) => void;
   setHasHydrated: (value: boolean) => void;
 };
 
@@ -99,6 +102,7 @@ export const useCartStore = create<CartStore>()(
     (set) => ({
       items: [],
       mode: "today",
+      preorderDate: null,
       hasHydrated: false,
 
       addItem: (item, quantity = 1, stockLimit = null) => {
@@ -177,20 +181,33 @@ export const useCartStore = create<CartStore>()(
         set((state) => ({
           mode,
           items: state.mode === mode ? state.items : [],
+          preorderDate: state.mode === mode ? state.preorderDate : null,
         })),
+
+      setPreorderDate: (value) => set({ preorderDate: value }),
 
       setHasHydrated: (value) => set({ hasHydrated: value }),
     }),
     {
       name: "golden-glaze-cart",
       skipHydration: true,
-      partialize: (state) => ({ items: state.items, mode: state.mode }),
+      partialize: (state) => ({
+        items: state.items,
+        mode: state.mode,
+        preorderDate: state.preorderDate,
+      }),
       merge: (persistedState, currentState) => {
         const persisted = isRecord(persistedState) ? persistedState : {};
         const mode = isOrderMode(persisted.mode) ? persisted.mode : "today";
+        const preorderDate =
+          typeof persisted.preorderDate === "string" &&
+          /^\d{4}-\d{2}-\d{2}$/.test(persisted.preorderDate)
+            ? persisted.preorderDate
+            : null;
         return {
           ...currentState,
           mode,
+          preorderDate: mode === "preorder" ? preorderDate : null,
           items: readPersistedItems(persisted.items, mode),
         };
       },

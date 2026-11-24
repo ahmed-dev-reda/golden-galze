@@ -11,13 +11,14 @@ import {
 import { createOrder } from "@/app/actions/orders";
 import { formatPrice, productName } from "@/lib/format";
 import { ORDER_MODE_LABELS, type OrderMode } from "@/lib/order-mode";
+import type { PreorderDateOption } from "@/lib/preorder-dates";
 import type { StorefrontSettings } from "@/lib/storefront-settings";
 import { selectCartSubtotal, useCartStore } from "@/store/cart-store";
 
 type CheckoutFormProps = {
   settings: StorefrontSettings;
   todayDate: string;
-  tomorrowDate: string;
+  preorderDates: PreorderDateOption[];
 };
 
 const fieldClass =
@@ -52,12 +53,13 @@ function combineDeliveryAddress(
     .slice(0, maxAddressLength);
 }
 
-export function CheckoutForm({ settings, todayDate, tomorrowDate }: CheckoutFormProps) {
+export function CheckoutForm({ settings, todayDate, preorderDates }: CheckoutFormProps) {
   const router = useRouter();
   const items = useCartStore((state) => state.items);
   const hasHydrated = useCartStore((state) => state.hasHydrated);
   const subtotal = useCartStore(selectCartSubtotal);
   const mode = useCartStore((state) => state.mode);
+  const preorderDate = useCartStore((state) => state.preorderDate);
   const clearCart = useCartStore((state) => state.clearCart);
   const [city, setCity] = useState(settings.deliveryAreas[0] ?? "");
   const [paymentMethod, setPaymentMethod] = useState<"cash" | "instapay">(
@@ -67,7 +69,12 @@ export function CheckoutForm({ settings, todayDate, tomorrowDate }: CheckoutForm
   const [error, setError] = useState("");
   const [selectedLocation, setSelectedLocation] =
     useState<SelectedLocation | null>(null);
-  const fulfillmentDate = mode === "preorder" ? tomorrowDate : todayDate;
+  const selectedFulfillmentDate =
+    mode === "preorder"
+      ? (preorderDates.find((option) => option.value === preorderDate)?.value ??
+        preorderDates[0]?.value ??
+        todayDate)
+      : todayDate;
 
   const stockIsValid =
     mode === "preorder" ||
@@ -130,6 +137,10 @@ export function CheckoutForm({ settings, todayDate, tomorrowDate }: CheckoutForm
       formData.set("address", fullAddress);
       formData.set("orderMode", mode);
       formData.set(
+        "preorderDate",
+        mode === "preorder" ? selectedFulfillmentDate : "",
+      );
+      formData.set(
         "items",
         JSON.stringify(
           items.map(({ id, quantity }) => ({ id, quantity, mode })),
@@ -156,7 +167,7 @@ export function CheckoutForm({ settings, todayDate, tomorrowDate }: CheckoutForm
             paymentMethod: completedOrder.paymentMethod,
             receiptUploaded,
             orderMode: mode,
-            fulfillmentDate,
+            fulfillmentDate: selectedFulfillmentDate,
           }),
         );
       } catch (storageError) {
@@ -190,7 +201,7 @@ export function CheckoutForm({ settings, todayDate, tomorrowDate }: CheckoutForm
         اكتب بياناتك واختار طريقة الدفع المناسبة.
       </p>
       <div className="mb-5 rounded-lg bg-brand-light px-4 py-3 text-[13px] font-semibold text-brand">
-        {ORDER_MODE_LABELS[mode as OrderMode]} — تاريخ الاستلام: {fulfillmentDate || "—"}
+        {ORDER_MODE_LABELS[mode as OrderMode]} — تاريخ الاستلام: {selectedFulfillmentDate}
       </div>
 
       {!settings.orderingEnabled && (
@@ -224,6 +235,11 @@ export function CheckoutForm({ settings, todayDate, tomorrowDate }: CheckoutForm
           onSubmit={handleSubmit}
         >
           <input type="hidden" name="orderMode" value={mode} />
+          <input
+            type="hidden"
+            name="preorderDate"
+            value={mode === "preorder" ? selectedFulfillmentDate : ""}
+          />
           <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
             <label
               className={`flex flex-col gap-1.5 ${labelClass}`}

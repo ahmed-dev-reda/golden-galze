@@ -3,13 +3,14 @@
 import { useState } from "react";
 import { Cookie, MoonStar } from "lucide-react";
 import { ORDER_MODE_LABELS, type OrderMode } from "@/lib/order-mode";
+import type { PreorderDateOption } from "@/lib/preorder-dates";
 import { useCartStore } from "@/store/cart-store";
 
 type Props = {
   compact?: boolean;
   className?: string;
   todayDate: string;
-  tomorrowDate: string;
+  preorderDates: PreorderDateOption[];
 };
 
 const options: Array<{
@@ -20,12 +21,12 @@ const options: Array<{
   {
     mode: "today",
     icon: Cookie,
-    description: "دونات متاح النهاردة، الكمية محدودة حسب المخزون.",
+    description: "الكمية بتكون على حسب المخزون",
   },
   {
     mode: "preorder",
     icon: MoonStar,
-    description: "اطلب بأي كمية واستلمها بكرة طازة.",
+    description: "تقدر تطلب اي كمية لليوم اللي انت عاوزه",
   },
 ];
 
@@ -33,14 +34,19 @@ export function OrderModeSelector({
   compact = false,
   className = "",
   todayDate,
-  tomorrowDate,
+  preorderDates,
 }: Props) {
   const mode = useCartStore((state) => state.mode);
   const setMode = useCartStore((state) => state.setMode);
+  const preorderDate = useCartStore((state) => state.preorderDate);
+  const setPreorderDate = useCartStore((state) => state.setPreorderDate);
   const itemCount = useCartStore((state) => state.items.length);
   const hasHydrated = useCartStore((state) => state.hasHydrated);
   const [pendingMode, setPendingMode] = useState<OrderMode | null>(null);
-  const dates = { today: todayDate, tomorrow: tomorrowDate };
+
+  const activePreorderDate =
+    preorderDates.find((option) => option.value === preorderDate) ??
+    preorderDates[0];
 
   function choose(next: OrderMode) {
     if (next === mode) return;
@@ -56,6 +62,33 @@ export function OrderModeSelector({
     setMode(pendingMode);
     setPendingMode(null);
   }
+
+  const datePicker =
+    mode === "preorder" && preorderDates.length > 0 ? (
+      <div className="mt-3" aria-label="تاريخ الاستلام">
+        <p className={`mb-1.5 ${"text-[12px] font-semibold text-[#493a34]"}`}>
+          اختار تاريخ الاستلام (حتى أسبوع من اليوم)
+        </p>
+        <div className="flex flex-wrap gap-2">
+          {preorderDates.map((option) => (
+            <button
+              key={option.value}
+              type="button"
+              aria-pressed={activePreorderDate?.value === option.value}
+              onClick={() => setPreorderDate(option.value)}
+              title={option.label}
+              className={`min-h-9 rounded-md border px-3 text-[12px] font-semibold transition-colors ${
+                activePreorderDate?.value === option.value
+                  ? "border-brand bg-brand text-white"
+                  : "border-line bg-white text-warm hover:bg-brand-light"
+              }`}
+            >
+              {option.shortLabel}
+            </button>
+          ))}
+        </div>
+      </div>
+    ) : null;
 
   if (compact) {
     return (
@@ -80,12 +113,12 @@ export function OrderModeSelector({
               {ORDER_MODE_LABELS[option]}
             </button>
           ))}
-          {dates && (
-            <p className="m-0 mr-auto text-[12px] text-muted">
-              تاريخ الاستلام: {mode === "today" ? dates.today : dates.tomorrow}
-            </p>
-          )}
+          <p className="m-0 mr-auto text-[12px] text-muted">
+            تاريخ الاستلام:{" "}
+            {mode === "today" ? todayDate : (activePreorderDate?.value ?? "—")}
+          </p>
         </div>
+        {datePicker}
         {pendingMode && (
           <SwitchConfirmation
             next={pendingMode}
@@ -103,7 +136,8 @@ export function OrderModeSelector({
     >
       <h2 className="mb-1 mt-0 text-[18px] font-bold">اختار طريقة الطلب</h2>
       <p className="mb-4 mt-0 text-[13px] leading-6 text-muted">
-        اختار دوناتس النهاردة أو احجز بكرة. مش هتقدر تخلط بينهم في نفس الطلب.
+        اختار دوناتس النهاردة أو احجز لمدة حتى أسبوع قادم. مش هتقدر تخلط بينهم
+        في نفس الطلب.
       </p>
 
       <div className="grid gap-3 sm:grid-cols-2">
@@ -129,17 +163,12 @@ export function OrderModeSelector({
               <span className="text-[13px] leading-6 text-[#493a34]">
                 {description}
               </span>
-              {dates && (
-                <span className="mt-auto text-[12px] text-muted">
-                  تاريخ الاستلام:{" "}
-                  {option === "today" ? dates.today : dates.tomorrow}
-                </span>
-              )}
             </button>
           );
         })}
       </div>
 
+      {datePicker}
       {pendingMode && (
         <SwitchConfirmation
           next={pendingMode}

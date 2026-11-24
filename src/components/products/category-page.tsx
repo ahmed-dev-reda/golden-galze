@@ -4,6 +4,7 @@ import { cairoBusinessDate } from "@/lib/order-mode";
 import { ProductGrid } from "@/components/products/product-grid";
 import { ProductGridSkeleton } from "./product-skeleton-grid";
 import { connection } from "next/server";
+import { getPreorderDateOptions } from "@/lib/preorder-dates";
 
 export async function CategoryPage({
   category,
@@ -46,7 +47,7 @@ async function CategoryContent({
         compact
         className="mb-5"
         todayDate={cairoBusinessDate()}
-        tomorrowDate={cairoBusinessDate(1)}
+        preorderDates={getPreorderDateOptions()}
       />
       <Suspense fallback={<ProductGridSkeleton />}>
         <ProductGrid category={category} />

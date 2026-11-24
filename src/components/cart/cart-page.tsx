@@ -4,6 +4,7 @@ import { useEffect } from "react";
 import Link from "next/link";
 import { formatPrice, productName } from "@/lib/format";
 import { ORDER_MODE_LABELS } from "@/lib/order-mode";
+import type { PreorderDateOption } from "@/lib/preorder-dates";
 import { OrderModeSelector } from "@/components/welcome/buttons";
 import {
   MAX_CART_QUANTITY,
@@ -14,12 +15,13 @@ import {
 
 export function CartPage({
   todayDate,
-  tomorrowDate,
+  preorderDates,
 }: {
   todayDate: string;
-  tomorrowDate: string;
+  preorderDates: PreorderDateOption[];
 }) {
   const items = useCartStore((state) => state.items);
+  const preorderDate = useCartStore((state) => state.preorderDate);
   const mode = useCartStore((state) => state.mode);
   const updateQuantity = useCartStore((state) => state.updateQuantity);
   const removeItem = useCartStore((state) => state.removeItem);
@@ -84,11 +86,15 @@ export function CartPage({
         compact
         className="mb-4"
         todayDate={todayDate}
-        tomorrowDate={tomorrowDate}
+        preorderDates={preorderDates}
       />
       <div className="mb-4 rounded-lg bg-brand-light px-4 py-3 text-[13px] font-semibold text-brand">
         {ORDER_MODE_LABELS[mode]} — تاريخ الاستلام:{" "}
-        {mode === "today" ? todayDate : tomorrowDate}
+        {mode === "today"
+          ? todayDate
+          : (preorderDates.find((option) => option.value === preorderDate)?.value ??
+            preorderDates[0]?.value ??
+            "—")}
       </div>
       <div className="mb-6 flex flex-wrap items-end justify-between gap-3">
         <div>

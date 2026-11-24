@@ -2,6 +2,7 @@ import { Suspense } from "react";
 import { connection } from "next/server";
 import { CartPage } from "@/components/cart/cart-page";
 import { cairoBusinessDate } from "@/lib/order-mode";
+import { getPreorderDateOptions } from "@/lib/preorder-dates";
 
 export default function CartRoute() {
   return (
@@ -22,7 +23,7 @@ async function CartContent() {
   return (
     <CartPage
       todayDate={cairoBusinessDate()}
-      tomorrowDate={cairoBusinessDate(1)}
+      preorderDates={getPreorderDateOptions()}
     />
   );
 }

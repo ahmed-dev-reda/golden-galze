@@ -124,7 +124,7 @@ export function ProductCard({ donut, index }: { donut: Donut; index: number }) {
             ? donut.todayStock === null
               ? "لا توجد كمية متاحة اليوم"
               : `الكمية المتاحة: ${todayLimit}`
-            : "حجز لبكرة — متاح بأي كمية"}
+            : "حجز مفتوح — متاح بأي كمية"}
         </p>
 
         <div className="mt-2.5 flex items-center justify-between gap-2 flex-wrap">

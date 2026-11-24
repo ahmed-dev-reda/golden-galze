@@ -4,6 +4,7 @@ import { createClient } from "@/utils/supabase/server";
 import { parseStorefrontSettings } from "@/lib/storefront-settings";
 import { connection } from "next/server";
 import { cairoBusinessDate } from "@/lib/order-mode";
+import { getPreorderDateOptions } from "@/lib/preorder-dates";
 
 function CheckoutLoading() {
   return (
@@ -67,7 +68,7 @@ async function CheckoutContent() {
     <CheckoutForm
       settings={settings}
       todayDate={cairoBusinessDate()}
-      tomorrowDate={cairoBusinessDate(1)}
+      preorderDates={getPreorderDateOptions()}
     />
   );
 }
