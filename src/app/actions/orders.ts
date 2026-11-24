@@ -1,6 +1,7 @@
 "use server";
 
 import { randomUUID } from "node:crypto";
+import { cairoBusinessDate, isOrderMode } from "@/lib/order-mode";
 import { createClient } from "@/utils/supabase/server";
 
 const uuidPattern =
@@ -56,7 +57,7 @@ export type TrackOrderResult =
   | { ok: true; order: TrackedOrder }
   | { ok: false; message: string };
 
-type OrderItemInput = { id: string; quantity: number };
+type OrderItemInput = { id: string; quantity: number; mode?: unknown };
 
 function field(formData: FormData, name: string): string | null {
   const value = formData.get(name);
@@ -103,7 +104,13 @@ function parseItems(value: string | null): OrderItemInput[] | null {
     }
 
     ids.add(entry.id);
-    items.push({ id: entry.id, quantity: entry.quantity });
+    items.push({
+      id: entry.id,
+      quantity: entry.quantity,
+      ...(Object.prototype.hasOwnProperty.call(entry, "mode")
+        ? { mode: entry.mode }
+        : {}),
+    });
   }
 
   return items;
@@ -140,6 +147,21 @@ function mapCreateError(message: string): string {
   }
   if (message.includes("delivery_location_unavailable")) {
     return "منطقة التوصيل المختارة غير متاحة حاليًا.";
+  }
+  if (
+    message.includes("insufficient_stock") ||
+    message.includes("stock_unavailable")
+  ) {
+    return "الكمية المطلوبة لم تعد متاحة. راجع السلة وحاول مرة أخرى.";
+  }
+  if (message.includes("stock_date_mismatch")) {
+    return "مخزون اليوم غير محدث أو منتهي الصلاحية. حاول مرة أخرى لاحقًا.";
+  }
+  if (
+    message.includes("invalid_order_mode") ||
+    message.includes("mixed_order_items")
+  ) {
+    return "نوع الطلب غير صالح. لا يمكن خلط دوناتس النهاردة مع الحجز لبكرة.";
   }
   if (message.includes("payment_method_disabled")) {
     return "طريقة الدفع المختارة غير متاحة حاليًا.";
@@ -232,8 +254,22 @@ export async function createOrder(
   const notes = field(formData, "notes") ?? "";
   const paymentMethod = field(formData, "paymentMethod");
   const items = parseItems(field(formData, "items"));
+  // Order mode is user intent, but it is validated here and never trusted for
+  // prices, stock or dates. The database remains authoritative for those.
+  const orderMode = field(formData, "orderMode");
   const normalizedPhone = phone ? normalizePhone(phone) : "";
   const normalizedAlternatePhone = normalizePhone(alternatePhone);
+  const businessDate = cairoBusinessDate();
+
+  if (!isOrderMode(orderMode)) {
+    return { ok: false, message: "نوع الطلب غير صالح." };
+  }
+  if (items && items.some((item) => item.mode !== undefined && item.mode !== orderMode)) {
+    return {
+      ok: false,
+      message: "لا يمكن خلط دوناتس النهاردة مع الحجز لبكرة في نفس الطلب.",
+    };
+  }
 
   if (
     !name ||
@@ -285,6 +321,52 @@ export async function createOrder(
   }
 
   const supabase = await createClient();
+
+  // Early, friendly validation for same-day orders. The RPC must still lock
+  // rows and deduct stock atomically to prevent concurrent overselling.
+  if (orderMode === "today") {
+    const { data: stockRows, error: stockError } = await supabase
+      .from("donuts")
+      .select("id, today_stock, stock_date, is_available")
+      .in(
+        "id",
+        items.map((item) => item.id),
+      );
+
+    if (stockError) {
+      console.error("Unable to verify today's stock.", stockError.message);
+      return { ok: false, message: "تعذر التحقق من الكمية المتاحة اليوم." };
+    }
+
+    const stockById = new Map(
+      (stockRows ?? []).map((row: {
+        id: string;
+        today_stock: number | string | null;
+        stock_date: string | null;
+        is_available: boolean;
+      }) => [row.id, row]),
+    );
+
+    for (const item of items) {
+      const row = stockById.get(item.id);
+      // today_stock is numeric in Supabase: NULL means no stock at all.
+      const raw = row?.today_stock;
+      const available = raw === null || raw === undefined ? null : Number(raw);
+      if (
+        !row?.is_available ||
+        row.stock_date !== businessDate ||
+        available === null ||
+        !Number.isFinite(available) ||
+        Math.floor(available) < item.quantity
+      ) {
+        return {
+          ok: false,
+          message: "بعض المنتجات غير متاحة بالكمية المطلوبة اليوم.",
+        };
+      }
+    }
+  }
+
   const { data, error } = await supabase.rpc("create_guest_order", {
     p_name: name,
     p_phone: phone,
@@ -293,7 +375,8 @@ export async function createOrder(
     p_address: address,
     p_notes: notes,
     p_payment_method: paymentMethod,
-    p_items: items,
+    p_items: items.map(({ id, quantity }) => ({ id, quantity })),
+    p_order_mode: orderMode,
   });
 
   if (error) {

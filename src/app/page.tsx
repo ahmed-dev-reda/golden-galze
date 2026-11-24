@@ -1,8 +1,20 @@
+import { OrderModeSelector } from "@/components/welcome/buttons";
+import { cairoBusinessDate } from "@/lib/order-mode";
 import { ProductGrid } from "@/components/products/product-grid";
 import { ProductGridSkeleton } from "@/components/products/product-skeleton-grid";
 import { Suspense } from "react";
+import { connection } from "next/server";
 
 export default function HomePage() {
+  return (
+    <Suspense fallback={<ProductGridSkeleton />}>
+      <HomeContent />
+    </Suspense>
+  );
+}
+
+async function HomeContent() {
+  await connection();
   return (
     <main>
       <section className="relative mx-auto mt-4 min-h-[220px] w-[calc(100%-2rem)] max-w-6xl overflow-hidden rounded-xl bg-brand-light px-6 py-7 sm:mt-[30px] sm:min-h-[245px] sm:px-12 sm:py-10">
@@ -33,6 +45,12 @@ export default function HomePage() {
         >
           ✦
         </span>
+      </section>
+      <section className="mx-auto w-[calc(100%-2rem)] max-w-6xl pt-4 sm:pt-6">
+        <OrderModeSelector
+          todayDate={cairoBusinessDate()}
+          tomorrowDate={cairoBusinessDate(1)}
+        />
       </section>
       <section
         className="mx-auto w-[calc(100%-2rem)] max-w-6xl pb-12 pt-7 sm:pb-[75px] sm:pt-[37px]"

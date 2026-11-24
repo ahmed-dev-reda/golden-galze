@@ -1,6 +1,7 @@
 import type { Metadata } from "next";
 import { Suspense } from "react";
 import { IBM_Plex_Sans_Arabic } from "next/font/google";
+import "leaflet/dist/leaflet.css";
 import "./globals.css";
 import AppHeader from "@/components/layout/app-header";
 import { SiteFooter } from "@/components/layout/site-footer";

@@ -11,6 +11,8 @@ type OrderSummary = {
   total: number;
   paymentMethod: "cash" | "instapay";
   receiptUploaded: boolean;
+  orderMode?: string;
+  fulfillmentDate?: string;
 };
 
 const confirmationStorageKey = "golden-glaze-last-order";
@@ -46,7 +48,10 @@ function parseSummary(value: unknown): OrderSummary | null {
     !Number.isFinite(record.total) ||
     record.total < 0 ||
     (record.paymentMethod !== "cash" && record.paymentMethod !== "instapay") ||
-    typeof record.receiptUploaded !== "boolean"
+    typeof record.receiptUploaded !== "boolean" ||
+    (record.orderMode !== undefined &&
+      record.orderMode !== "today" &&
+      record.orderMode !== "preorder")
   ) {
     return null;
   }
@@ -142,6 +147,11 @@ export function OrderConfirmation({
           ✓
         </div>
         <h1 className="mb-2 mt-0 text-2xl font-bold">تم استلام طلبك</h1>
+        {summary.orderMode === "preorder" && (
+          <p className="mb-3 rounded-md bg-brand-light p-3 text-sm font-semibold text-brand">
+            حجز لبكرة — تاريخ الاستلام: {summary.fulfillmentDate ?? "—"}
+          </p>
+        )}
         <p className="mb-3 text-muted">
           احتفظ برقم الطلب لمتابعة حالته.
         </p>

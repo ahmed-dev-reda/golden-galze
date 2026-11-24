@@ -4,25 +4,60 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useState, type FormEvent } from "react";
 import { PaymentProofUpload } from "@/components/checkout/payment-proof-upload";
+import {
+  LocationPicker,
+  type SelectedLocation,
+} from "@/components/checkout/location-picker";
 import { createOrder } from "@/app/actions/orders";
 import { formatPrice, productName } from "@/lib/format";
+import { ORDER_MODE_LABELS, type OrderMode } from "@/lib/order-mode";
 import type { StorefrontSettings } from "@/lib/storefront-settings";
 import { selectCartSubtotal, useCartStore } from "@/store/cart-store";
 
 type CheckoutFormProps = {
   settings: StorefrontSettings;
+  todayDate: string;
+  tomorrowDate: string;
 };
 
 const fieldClass =
   "min-h-[43px] w-full rounded-md border border-field-line bg-white px-3 py-2";
 const labelClass = "text-[13px] font-semibold text-[#493a34]";
 const confirmationStorageKey = "golden-glaze-last-order";
+const maxAddressLength = 500;
 
-export function CheckoutForm({ settings }: CheckoutFormProps) {
+function combineDeliveryAddress(
+  city: string,
+  detailed: string,
+  readable: string,
+): string {
+  const clean = (value: string) => value.trim().replace(/\s+/g, " ");
+  const cityPart = clean(city);
+  const detailedPart = clean(detailed);
+  let readablePart = clean(readable);
+
+  // Nominatim often repeats the governorate; keep each piece only once.
+  if (cityPart && readablePart.includes(cityPart)) {
+    readablePart = readablePart
+      .split(cityPart)
+      .join(" ")
+      .replace(/\s+/g, " ")
+      .replace(/^[\s،,]+|[\s،,]+$/g, "")
+      .trim();
+  }
+
+  return [cityPart, detailedPart, readablePart]
+    .filter(Boolean)
+    .join("، ")
+    .slice(0, maxAddressLength);
+}
+
+export function CheckoutForm({ settings, todayDate, tomorrowDate }: CheckoutFormProps) {
   const router = useRouter();
   const items = useCartStore((state) => state.items);
   const hasHydrated = useCartStore((state) => state.hasHydrated);
   const subtotal = useCartStore(selectCartSubtotal);
+  const mode = useCartStore((state) => state.mode);
   const clearCart = useCartStore((state) => state.clearCart);
   const [city, setCity] = useState(settings.deliveryAreas[0] ?? "");
   const [paymentMethod, setPaymentMethod] = useState<"cash" | "instapay">(
@@ -30,6 +65,15 @@ export function CheckoutForm({ settings }: CheckoutFormProps) {
   );
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [error, setError] = useState("");
+  const [selectedLocation, setSelectedLocation] =
+    useState<SelectedLocation | null>(null);
+  const fulfillmentDate = mode === "preorder" ? tomorrowDate : todayDate;
+
+  const stockIsValid =
+    mode === "preorder" ||
+    items.every(
+      (item) => item.stockLimit !== null && item.quantity <= item.stockLimit,
+    );
 
   const deliveryFee = city
     ? (settings.deliveryFees[city] ?? settings.deliveryFee)
@@ -42,7 +86,9 @@ export function CheckoutForm({ settings }: CheckoutFormProps) {
     hasPaymentMethod &&
     settings.deliveryAreas.length > 0 &&
     hasHydrated &&
-    items.length > 0;
+    items.length > 0 &&
+    stockIsValid &&
+    selectedLocation !== null;
 
   async function handleSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -52,13 +98,42 @@ export function CheckoutForm({ settings }: CheckoutFormProps) {
       setError("السلة فارغة. أضف منتجات قبل تأكيد الطلب.");
       return;
     }
+    if (!stockIsValid) {
+      setError(
+        "الكمية المطلوبة أكبر من المتاح اليوم، أو لم يُحدد مخزون اليوم بعد. راجع السلة.",
+      );
+      return;
+    }
+    if (!selectedLocation) {
+      setError("حدد موقع التوصيل على الخريطة قبل تأكيد الطلب.");
+      return;
+    }
 
     setIsSubmitting(true);
     try {
       const formData = new FormData(event.currentTarget);
+      const detailedAddress =
+        typeof formData.get("address") === "string"
+          ? String(formData.get("address"))
+          : "";
+      const fullAddress = combineDeliveryAddress(
+        city,
+        detailedAddress,
+        selectedLocation.readableAddress,
+      );
+      if (fullAddress.length < 8 || fullAddress.length > maxAddressLength) {
+        setError("اكتب عنوان توصيل واضحًا لا يتجاوز 500 حرف.");
+        return;
+      }
+      // The RPC keeps using p_address; v_full_address in the database does
+      // the rest. Coordinates are never sent to Supabase.
+      formData.set("address", fullAddress);
+      formData.set("orderMode", mode);
       formData.set(
         "items",
-        JSON.stringify(items.map(({ id, quantity }) => ({ id, quantity }))),
+        JSON.stringify(
+          items.map(({ id, quantity }) => ({ id, quantity, mode })),
+        ),
       );
 
       const result = await createOrder(formData);
@@ -80,6 +155,8 @@ export function CheckoutForm({ settings }: CheckoutFormProps) {
             total: completedOrder.total,
             paymentMethod: completedOrder.paymentMethod,
             receiptUploaded,
+            orderMode: mode,
+            fulfillmentDate,
           }),
         );
       } catch (storageError) {
@@ -109,9 +186,12 @@ export function CheckoutForm({ settings }: CheckoutFormProps) {
   return (
     <main className="mx-auto min-h-[58vh] w-[calc(100%-2rem)] max-w-5xl py-7 sm:py-10">
       <h1 className="mb-2 text-[27px] font-bold">بيانات التوصيل والدفع</h1>
-      <p className="mb-6 text-sm leading-7 text-muted">
+      <p className="mb-3 text-sm leading-7 text-muted">
         اكتب بياناتك واختار طريقة الدفع المناسبة.
       </p>
+      <div className="mb-5 rounded-lg bg-brand-light px-4 py-3 text-[13px] font-semibold text-brand">
+        {ORDER_MODE_LABELS[mode as OrderMode]} — تاريخ الاستلام: {fulfillmentDate || "—"}
+      </div>
 
       {!settings.orderingEnabled && (
         <p
@@ -143,6 +223,7 @@ export function CheckoutForm({ settings }: CheckoutFormProps) {
           className="rounded-[10px] border border-line bg-white p-4 sm:p-5"
           onSubmit={handleSubmit}
         >
+          <input type="hidden" name="orderMode" value={mode} />
           <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
             <label
               className={`flex flex-col gap-1.5 ${labelClass}`}
@@ -226,6 +307,14 @@ export function CheckoutForm({ settings }: CheckoutFormProps) {
                 required
               />
             </label>
+
+            <div className="sm:col-span-2">
+              <LocationPicker
+                value={selectedLocation}
+                onChange={setSelectedLocation}
+              />
+            </div>
+
             <label
               className={`flex flex-col gap-1.5 sm:col-span-2 ${labelClass}`}
               htmlFor="notes"
@@ -292,6 +381,16 @@ export function CheckoutForm({ settings }: CheckoutFormProps) {
             </p>
           )}
 
+          {!stockIsValid && (
+            <p className="mt-4 text-[12px] text-[#8a5a1f]" role="status">
+              الكمية المطلوبة غير متاحة اليوم، أو لم يُحدد مخزون اليوم بعد.
+            </p>
+          )}
+          {!selectedLocation && (
+            <p className="mt-4 text-[12px] text-[#8a5a1f]" role="status">
+              يجب تحديد موقع التوصيل على الخريطة قبل تأكيد الطلب.
+            </p>
+          )}
           <button
             className="mt-4 inline-flex min-h-11 w-full items-center justify-center rounded-lg bg-brand px-5 font-semibold text-white transition-colors hover:bg-brand-hover disabled:cursor-not-allowed disabled:opacity-60 sm:w-auto"
             type="submit"

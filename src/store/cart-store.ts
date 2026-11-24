@@ -1,5 +1,6 @@
 import { create } from "zustand";
 import { persist } from "zustand/middleware";
+import { isOrderMode, type OrderMode } from "@/lib/order-mode";
 
 export const MAX_CART_QUANTITY = 50;
 
@@ -9,17 +10,25 @@ export type CartItem = {
   price: number;
   image_url: string | null;
   quantity: number;
+  /** Today's stock captured when the item was added; null for preorders. */
+  stockLimit: number | null;
 };
 
 export type CartStore = {
   items: CartItem[];
+  mode: OrderMode;
   hasHydrated: boolean;
-  addItem: (item: Omit<CartItem, "quantity">, quantity?: number) => void;
+  addItem: (
+    item: Omit<CartItem, "quantity" | "stockLimit">,
+    quantity?: number,
+    stockLimit?: number | null,
+  ) => void;
   removeItem: (id: string) => void;
   increaseItem: (id: string) => void;
   decreaseItem: (id: string) => void;
   updateQuantity: (id: string, quantity: number) => void;
   clearCart: () => void;
+  setMode: (mode: OrderMode) => void;
   setHasHydrated: (value: boolean) => void;
 };
 
@@ -27,12 +36,19 @@ function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null;
 }
 
-function validQuantity(value: number): number | null {
+function validQuantity(value: number, limit = MAX_CART_QUANTITY): number | null {
   if (!Number.isFinite(value) || value < 1) return null;
-  return Math.min(MAX_CART_QUANTITY, Math.floor(value));
+  return Math.min(limit, Math.floor(value));
 }
 
-function readPersistedItems(value: unknown): CartItem[] {
+function readStockLimit(value: unknown, mode: OrderMode): number | null {
+  if (mode !== "today") return null;
+  if (typeof value !== "number" || !Number.isFinite(value)) return null;
+  return Math.max(0, Math.floor(value));
+
+}
+
+function readPersistedItems(value: unknown, mode: OrderMode): CartItem[] {
   if (!Array.isArray(value)) return [];
 
   const items = new Map<string, CartItem>();
@@ -41,8 +57,11 @@ function readPersistedItems(value: unknown): CartItem[] {
 
     const { id, name, price, quantity } = candidate;
     const image = candidate.image_url ?? candidate.imageUrl ?? null;
+    const stockLimit = readStockLimit(candidate.stockLimit, mode);
     const count =
-      typeof quantity === "number" ? validQuantity(quantity) : null;
+      typeof quantity === "number"
+        ? validQuantity(quantity, stockLimit ?? MAX_CART_QUANTITY)
+        : null;
 
     if (
       typeof id !== "string" ||
@@ -62,21 +81,29 @@ function readPersistedItems(value: unknown): CartItem[] {
       name,
       price,
       image_url: image,
-      quantity: Math.min(MAX_CART_QUANTITY, (existing?.quantity ?? 0) + count),
+      stockLimit,
+      quantity: Math.min(
+        stockLimit ?? MAX_CART_QUANTITY,
+        (existing?.quantity ?? 0) + count,
+      ),
     });
   }
 
-  return [...items.values()];
+  return [...items.values()].filter(
+    (item) => item.quantity > 0 && (item.stockLimit === null || item.quantity <= item.stockLimit),
+  );
 }
 
 export const useCartStore = create<CartStore>()(
   persist(
     (set) => ({
       items: [],
+      mode: "today",
       hasHydrated: false,
 
-      addItem: (item, quantity = 1) => {
-        const count = validQuantity(quantity);
+      addItem: (item, quantity = 1, stockLimit = null) => {
+        const limit = stockLimit ?? MAX_CART_QUANTITY;
+        const count = validQuantity(quantity, limit);
         if (
           count === null ||
           !item.id ||
@@ -90,22 +117,21 @@ export const useCartStore = create<CartStore>()(
         set((state) => {
           const existing = state.items.find((cartItem) => cartItem.id === item.id);
           if (existing) {
+            const max = existing.stockLimit ?? MAX_CART_QUANTITY;
             return {
               items: state.items.map((cartItem) =>
                 cartItem.id === item.id
                   ? {
                       ...item,
-                      quantity: Math.min(
-                        MAX_CART_QUANTITY,
-                        cartItem.quantity + count,
-                      ),
+                      stockLimit: existing.stockLimit,
+                      quantity: Math.min(max, cartItem.quantity + count),
                     }
                   : cartItem,
               ),
             };
           }
 
-          return { items: [...state.items, { ...item, quantity: count }] };
+          return { items: [...state.items, { ...item, stockLimit, quantity: count }] };
         });
       },
 
@@ -116,14 +142,11 @@ export const useCartStore = create<CartStore>()(
 
       increaseItem: (id) =>
         set((state) => ({
-          items: state.items.map((item) =>
-            item.id === id
-              ? {
-                  ...item,
-                  quantity: Math.min(MAX_CART_QUANTITY, item.quantity + 1),
-                }
-              : item,
-          ),
+          items: state.items.map((item) => {
+            if (item.id !== id) return item;
+            const limit = state.mode === "today" ? item.stockLimit ?? 0 : MAX_CART_QUANTITY;
+            return { ...item, quantity: Math.min(limit, item.quantity + 1) };
+          }),
         })),
 
       decreaseItem: (id) =>
@@ -136,30 +159,39 @@ export const useCartStore = create<CartStore>()(
         })),
 
       updateQuantity: (id, quantity) => {
-        const count = validQuantity(quantity);
-        if (count === null) return;
-
         set((state) => ({
-          items: state.items.map((item) =>
-            item.id === id ? { ...item, quantity: count } : item,
-          ),
+          items: state.items.map((item) => {
+            if (item.id !== id) return item;
+            const limit = state.mode === "today" ? item.stockLimit ?? 0 : MAX_CART_QUANTITY;
+            const count = validQuantity(quantity, limit);
+            return count === null ? item : { ...item, quantity: count };
+          }),
         }));
       },
 
       clearCart: () => set({ items: [] }),
+
+      // Switching modes clears the cart so today's and tomorrow's items can
+      // never be mixed in one order. The UI asks for confirmation first.
+      setMode: (mode) =>
+        set((state) => ({
+          mode,
+          items: state.mode === mode ? state.items : [],
+        })),
+
       setHasHydrated: (value) => set({ hasHydrated: value }),
     }),
     {
       name: "golden-glaze-cart",
       skipHydration: true,
-      partialize: (state) => ({ items: state.items }),
+      partialize: (state) => ({ items: state.items, mode: state.mode }),
       merge: (persistedState, currentState) => {
-        const persistedItems = isRecord(persistedState)
-          ? persistedState.items
-          : undefined;
+        const persisted = isRecord(persistedState) ? persistedState : {};
+        const mode = isOrderMode(persisted.mode) ? persisted.mode : "today";
         return {
           ...currentState,
-          items: readPersistedItems(persistedItems),
+          mode,
+          items: readPersistedItems(persisted.items, mode),
         };
       },
       onRehydrateStorage: () => (state, error) => {

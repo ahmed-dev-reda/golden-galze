@@ -1,7 +1,10 @@
 "use client";
 
+import { useEffect } from "react";
 import Link from "next/link";
 import { formatPrice, productName } from "@/lib/format";
+import { ORDER_MODE_LABELS } from "@/lib/order-mode";
+import { OrderModeSelector } from "@/components/welcome/buttons";
 import {
   MAX_CART_QUANTITY,
   selectCartItemCount,
@@ -9,15 +12,34 @@ import {
   useCartStore,
 } from "@/store/cart-store";
 
-export function CartPage() {
+export function CartPage({
+  todayDate,
+  tomorrowDate,
+}: {
+  todayDate: string;
+  tomorrowDate: string;
+}) {
   const items = useCartStore((state) => state.items);
+  const mode = useCartStore((state) => state.mode);
+  const updateQuantity = useCartStore((state) => state.updateQuantity);
+  const removeItem = useCartStore((state) => state.removeItem);
   const hasHydrated = useCartStore((state) => state.hasHydrated);
   const itemCount = useCartStore(selectCartItemCount);
   const subtotal = useCartStore(selectCartSubtotal);
   const increaseItem = useCartStore((state) => state.increaseItem);
   const decreaseItem = useCartStore((state) => state.decreaseItem);
-  const removeItem = useCartStore((state) => state.removeItem);
   const clearCart = useCartStore((state) => state.clearCart);
+
+  // A cart saved on a previous day can hold more than today's stock.
+  useEffect(() => {
+    if (!hasHydrated || mode !== "today") return;
+    for (const item of items) {
+      if (item.stockLimit !== null && item.quantity > item.stockLimit) {
+        if (item.stockLimit < 1) removeItem(item.id);
+        else updateQuantity(item.id, item.stockLimit);
+      }
+    }
+  }, [hasHydrated, items, mode, removeItem, updateQuantity]);
 
   if (!hasHydrated) {
     return (
@@ -58,6 +80,16 @@ export function CartPage() {
 
   return (
     <main className="mx-auto min-h-[58vh] w-[calc(100%-2rem)] max-w-5xl py-7 sm:py-10">
+      <OrderModeSelector
+        compact
+        className="mb-4"
+        todayDate={todayDate}
+        tomorrowDate={tomorrowDate}
+      />
+      <div className="mb-4 rounded-lg bg-brand-light px-4 py-3 text-[13px] font-semibold text-brand">
+        {ORDER_MODE_LABELS[mode]} — تاريخ الاستلام:{" "}
+        {mode === "today" ? todayDate : tomorrowDate}
+      </div>
       <div className="mb-6 flex flex-wrap items-end justify-between gap-3">
         <div>
           <h1 className="mb-1 text-[27px] font-bold">سلة المشتريات</h1>
@@ -130,7 +162,10 @@ export function CartPage() {
                     className="h-7 w-5 cursor-pointer border-0 bg-transparent text-xl text-warm disabled:cursor-not-allowed disabled:opacity-40"
                     type="button"
                     aria-label="زود الكمية"
-                    disabled={item.quantity >= MAX_CART_QUANTITY}
+                    disabled={
+                      item.quantity >=
+                      (mode === "today" ? item.stockLimit ?? 0 : MAX_CART_QUANTITY)
+                    }
                     onClick={() => increaseItem(item.id)}
                   >
                     +

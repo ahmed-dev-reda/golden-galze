@@ -3,6 +3,7 @@ import { CheckoutForm } from "@/components/checkout/checkout-form";
 import { createClient } from "@/utils/supabase/server";
 import { parseStorefrontSettings } from "@/lib/storefront-settings";
 import { connection } from "next/server";
+import { cairoBusinessDate } from "@/lib/order-mode";
 
 function CheckoutLoading() {
   return (
@@ -62,5 +63,11 @@ async function CheckoutContent() {
     );
   }
 
-  return <CheckoutForm settings={settings} />;
+  return (
+    <CheckoutForm
+      settings={settings}
+      todayDate={cairoBusinessDate()}
+      tomorrowDate={cairoBusinessDate(1)}
+    />
+  );
 }
