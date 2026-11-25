@@ -37,7 +37,8 @@ function combineDeliveryAddress(
   const detailedPart = clean(detailed);
   let readablePart = clean(readable);
 
-  // Nominatim often repeats the governorate; keep each piece only once.
+  // Nominatim often repeats the governorate; keep each piece only once but
+  // never drop the customer's own detailed address.
   if (cityPart && readablePart.includes(cityPart)) {
     readablePart = readablePart
       .split(cityPart)
@@ -47,10 +48,13 @@ function combineDeliveryAddress(
       .trim();
   }
 
-  return [cityPart, detailedPart, readablePart]
+  return [
+    cityPart ? `المنطقة: ${cityPart}` : "",
+    detailedPart ? `العنوان التفصيلي: ${detailedPart}` : "",
+    readablePart ? `الموقع على الخريطة: ${readablePart}` : "",
+  ]
     .filter(Boolean)
-    .join("، ")
-    .slice(0, maxAddressLength);
+    .join("\n");
 }
 
 export function CheckoutForm({ settings, todayDate, preorderDates }: CheckoutFormProps) {
@@ -128,12 +132,18 @@ export function CheckoutForm({ settings, todayDate, preorderDates }: CheckoutFor
         detailedAddress,
         selectedLocation.readableAddress,
       );
-      if (fullAddress.length < 8 || fullAddress.length > maxAddressLength) {
-        setError("اكتب عنوان توصيل واضحًا لا يتجاوز 500 حرف.");
+      if (fullAddress.length < 8) {
+        setError("اكتب عنوان توصيل واضحًا قبل تأكيد الطلب.");
         return;
       }
-      // The RPC keeps using p_address; v_full_address in the database does
-      // the rest. Coordinates are never sent to Supabase.
+      if (fullAddress.length > maxAddressLength) {
+        setError(
+          "العنوان الإجمالي (المنطقة + العنوان التفصيلي + الموقع على الخريطة) تجاوز 500 حرف. قصّر العنوان التفصيلي حتى يُحفظ كاملًا دون حذف أي جزء.",
+        );
+        return;
+      }
+      // Only readable text goes to p_address; no coordinates are stored.
+      // The existing RPC/customer logic keeps using v_full_address.
       formData.set("address", fullAddress);
       formData.set("orderMode", mode);
       formData.set(
