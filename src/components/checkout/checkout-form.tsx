@@ -137,10 +137,6 @@ export function CheckoutForm({ settings, todayDate, preorderDates }: CheckoutFor
       formData.set("address", fullAddress);
       formData.set("orderMode", mode);
       formData.set(
-        "preorderDate",
-        mode === "preorder" ? selectedFulfillmentDate : "",
-      );
-      formData.set(
         "items",
         JSON.stringify(
           items.map(({ id, quantity }) => ({ id, quantity, mode })),
@@ -235,11 +231,6 @@ export function CheckoutForm({ settings, todayDate, preorderDates }: CheckoutFor
           onSubmit={handleSubmit}
         >
           <input type="hidden" name="orderMode" value={mode} />
-          <input
-            type="hidden"
-            name="preorderDate"
-            value={mode === "preorder" ? selectedFulfillmentDate : ""}
-          />
           <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
             <label
               className={`flex flex-col gap-1.5 ${labelClass}`}

@@ -1,11 +1,7 @@
 "use server";
 
 import { randomUUID } from "node:crypto";
-import { cairoBusinessDate, isOrderMode } from "@/lib/order-mode";
-import {
-  daysBetweenCairoDates,
-  getPreorderDateOptions,
-} from "@/lib/preorder-dates";
+import { isOrderMode } from "@/lib/order-mode";
 import { createClient } from "@/utils/supabase/server";
 
 const uuidPattern =
@@ -158,9 +154,6 @@ function mapCreateError(message: string): string {
   ) {
     return "الكمية المطلوبة لم تعد متاحة. راجع السلة وحاول مرة أخرى.";
   }
-  if (message.includes("invalid_fulfillment_date")) {
-    return "تاريخ الاستلام المختار غير صالح. اختر تاريخًا خلال الأسبوع القادم.";
-  }
   if (
     message.includes("invalid_order_mode") ||
     message.includes("mixed_order_items")
@@ -258,29 +251,15 @@ export async function createOrder(
   const notes = field(formData, "notes") ?? "";
   const paymentMethod = field(formData, "paymentMethod");
   const items = parseItems(field(formData, "items"));
-  // Order mode is user intent, but it is validated here and never trusted for
-  // prices, stock or dates. The database remains authoritative for those.
+  // Order mode controls stock handling only. It is not persisted as a new
+  // column: the RPC receives it solely to decide whether to deduct today's
+  // stock, and all existing validation stays inside the database function.
   const orderMode = field(formData, "orderMode");
-  const preorderDate = field(formData, "preorderDate");
   const normalizedPhone = phone ? normalizePhone(phone) : "";
   const normalizedAlternatePhone = normalizePhone(alternatePhone);
 
   if (!isOrderMode(orderMode)) {
     return { ok: false, message: "نوع الطلب غير صالح." };
-  }
-
-  // The client only suggests a date; we validate it against server-generated
-  // options and send a day offset so PostgreSQL computes the real date.
-  let fulfillmentDaysAhead = 0;
-  if (orderMode === "preorder") {
-    const allowed = getPreorderDateOptions().map((option) => option.value);
-    if (!preorderDate || !allowed.includes(preorderDate)) {
-      return { ok: false, message: "تاريخ الاستلام المختار غير صالح." };
-    }
-    fulfillmentDaysAhead = daysBetweenCairoDates(cairoBusinessDate(), preorderDate);
-    if (fulfillmentDaysAhead < 1 || fulfillmentDaysAhead > 7) {
-      return { ok: false, message: "تاريخ الاستلام المختار غير صالح." };
-    }
   }
   if (items && items.some((item) => item.mode !== undefined && item.mode !== orderMode)) {
     return {
@@ -393,7 +372,6 @@ export async function createOrder(
     p_payment_method: paymentMethod,
     p_items: items.map(({ id, quantity }) => ({ id, quantity })),
     p_order_mode: orderMode,
-    p_fulfillment_days_ahead: fulfillmentDaysAhead,
   });
 
   if (error) {
