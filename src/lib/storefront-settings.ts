@@ -7,6 +7,7 @@ export type StorefrontSettings = {
   cashOnDeliveryEnabled: boolean;
   instapayEnabled: boolean;
   instapayAccount: string;
+  whatsapp: string;
 };
 
 function isRecord(value: unknown): value is Record<string, unknown> {
@@ -31,6 +32,7 @@ export function parseStorefrontSettings(
     cashOnDeliveryEnabled,
     instapayEnabled,
     instapayAccount,
+    whatsapp,
   } = value;
 
   if (
@@ -42,7 +44,8 @@ export function parseStorefrontSettings(
     !isRecord(deliveryFees) ||
     typeof cashOnDeliveryEnabled !== "boolean" ||
     typeof instapayEnabled !== "boolean" ||
-    typeof instapayAccount !== "string"
+    typeof instapayAccount !== "string" ||
+    (whatsapp !== undefined && typeof whatsapp !== "string")
   ) {
     return null;
   }
@@ -62,5 +65,6 @@ export function parseStorefrontSettings(
     cashOnDeliveryEnabled,
     instapayEnabled,
     instapayAccount,
+    whatsapp: typeof whatsapp === "string" ? whatsapp : "",
   };
 }

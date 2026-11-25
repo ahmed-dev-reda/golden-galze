@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { useMemo, useSyncExternalStore } from "react";
+import { useMemo, useState, useSyncExternalStore } from "react";
 import { formatPrice } from "@/lib/format";
 
 type OrderSummary = {
@@ -13,6 +13,9 @@ type OrderSummary = {
   receiptUploaded: boolean;
   orderMode?: string;
   fulfillmentDate?: string;
+  customerName?: string;
+  whatsappUrl?: string | null;
+  whatsappOpened?: boolean;
 };
 
 const confirmationStorageKey = "golden-glaze-last-order";
@@ -51,7 +54,13 @@ function parseSummary(value: unknown): OrderSummary | null {
     typeof record.receiptUploaded !== "boolean" ||
     (record.orderMode !== undefined &&
       record.orderMode !== "today" &&
-      record.orderMode !== "preorder")
+      record.orderMode !== "preorder") ||
+    (record.customerName !== undefined && typeof record.customerName !== "string") ||
+    (record.whatsappUrl !== undefined &&
+      record.whatsappUrl !== null &&
+      typeof record.whatsappUrl !== "string") ||
+    (record.whatsappOpened !== undefined &&
+      typeof record.whatsappOpened !== "boolean")
   ) {
     return null;
   }
@@ -80,6 +89,26 @@ export function OrderConfirmation({
       return null;
     }
   }, [orderId, savedSummary]);
+  const [copyStatus, setCopyStatus] = useState("");
+
+  async function copyOrderDetails() {
+    if (!summary) return;
+    const text = [
+      `رقم الطلب: ${orderId}`,
+      summary.customerName ? `الاسم: ${summary.customerName}` : "",
+      "طريقة الدفع: InstaPay",
+      "صورة التحويل: تم الرفع",
+      "يرجى إرفاق صورة إثبات التحويل في واتساب يدويًا.",
+    ]
+      .filter(Boolean)
+      .join("\n");
+    try {
+      await navigator.clipboard.writeText(text);
+      setCopyStatus("تم نسخ بيانات الطلب.");
+    } catch {
+      setCopyStatus("تعذر النسخ تلقائيًا. انسخ رقم الطلب يدويًا.");
+    }
+  }
 
   if (!orderId) {
     return (
@@ -190,6 +219,49 @@ export function OrderConfirmation({
                   ? "InstaPay - تم رفع الإيصال"
                   : "InstaPay"}
             </p>
+          </div>
+        )}
+
+        {summary.paymentMethod === "instapay" && summary.receiptUploaded && (
+          <div className="mb-5 rounded-md border border-line bg-page p-3 text-right">
+            {summary.whatsappUrl && summary.whatsappOpened ? (
+              <p className="m-0 text-[13px] leading-6 text-brand">
+                تم فتح واتساب لإرسال إثبات التحويل. صورة الإيصال لا تُررفق
+                تلقائيًا، فأرفقها من جهازك داخل المحادثة.
+              </p>
+            ) : summary.whatsappUrl ? (
+              <>
+                <p className="m-0 text-[13px] leading-6 text-[#72511f]" role="alert">
+                  تعذر فتح واتساب تلقائيًا. اضغط الزر أدناه لإرسال بيانات الطلب،
+                  ثم أرفق صورة الإيصال يدويًا.
+                </p>
+                <a
+                  className="mt-2 inline-flex min-h-10 items-center justify-center rounded-lg bg-brand px-4 text-sm font-semibold text-white hover:bg-brand-hover"
+                  href={summary.whatsappUrl}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                >
+                  فتح واتساب
+                </a>
+              </>
+            ) : (
+              <p className="m-0 text-[13px] leading-6 text-[#9b2939]" role="alert">
+                رقم واتساب للمتجر غير متوفر حاليًا. انسخ بيانات الطلب وأرسلها
+                للمتجر مع صورة إثبات التحويل.
+              </p>
+            )}
+            <button
+              className="mt-2 inline-flex min-h-9 items-center justify-center rounded-md border border-field-line bg-white px-3 text-[12px] font-semibold text-warm hover:bg-brand-light"
+              type="button"
+              onClick={() => void copyOrderDetails()}
+            >
+              نسخ بيانات الطلب
+            </button>
+            {copyStatus && (
+              <p className="mb-0 mt-1 text-[12px] text-muted" role="status">
+                {copyStatus}
+              </p>
+            )}
           </div>
         )}
 

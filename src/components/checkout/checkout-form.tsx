@@ -11,6 +11,10 @@ import {
 import { createOrder } from "@/app/actions/orders";
 import { formatPrice, productName } from "@/lib/format";
 import { ORDER_MODE_LABELS, type OrderMode } from "@/lib/order-mode";
+import {
+  buildPaymentProofMessage,
+  buildWhatsAppUrl,
+} from "@/lib/whatsapp";
 import type { PreorderDateOption } from "@/lib/preorder-dates";
 import type { StorefrontSettings } from "@/lib/storefront-settings";
 import { selectCartSubtotal, useCartStore } from "@/store/cart-store";
@@ -57,7 +61,11 @@ function combineDeliveryAddress(
     .join("\n");
 }
 
-export function CheckoutForm({ settings, todayDate, preorderDates }: CheckoutFormProps) {
+export function CheckoutForm({
+  settings,
+  todayDate,
+  preorderDates,
+}: CheckoutFormProps) {
   const router = useRouter();
   const items = useCartStore((state) => state.items);
   const hasHydrated = useCartStore((state) => state.hasHydrated);
@@ -162,6 +170,30 @@ export function CheckoutForm({ settings, todayDate, preorderDates }: CheckoutFor
 
       const receiptUploaded =
         "proofUploaded" in completedOrder && completedOrder.proofUploaded;
+      const customerName =
+        typeof formData.get("name") === "string"
+          ? String(formData.get("name")).trim()
+          : "";
+      let whatsappUrl: string | null = null;
+      let whatsappOpened = false;
+
+      // Only after the receipt was uploaded AND linked to the order.
+      if (completedOrder.paymentMethod === "instapay" && receiptUploaded) {
+        whatsappUrl = buildWhatsAppUrl(
+          settings.whatsapp,
+          buildPaymentProofMessage(completedOrder.orderId, customerName),
+        );
+        if (whatsappUrl) {
+          try {
+            whatsappOpened = Boolean(
+              window.open(whatsappUrl, "_blank", "noopener,noreferrer"),
+            );
+          } catch {
+            whatsappOpened = false;
+          }
+        }
+      }
+
       try {
         sessionStorage.setItem(
           confirmationStorageKey,
@@ -174,6 +206,9 @@ export function CheckoutForm({ settings, todayDate, preorderDates }: CheckoutFor
             receiptUploaded,
             orderMode: mode,
             fulfillmentDate: selectedFulfillmentDate,
+            customerName,
+            whatsappUrl,
+            whatsappOpened,
           }),
         );
       } catch (storageError) {
@@ -207,7 +242,8 @@ export function CheckoutForm({ settings, todayDate, preorderDates }: CheckoutFor
         اكتب بياناتك واختار طريقة الدفع المناسبة.
       </p>
       <div className="mb-5 rounded-lg bg-brand-light px-4 py-3 text-[13px] font-semibold text-brand">
-        {ORDER_MODE_LABELS[mode as OrderMode]} — تاريخ الاستلام: {selectedFulfillmentDate}
+        {ORDER_MODE_LABELS[mode as OrderMode]} — تاريخ الاستلام:{" "}
+        {selectedFulfillmentDate}
       </div>
 
       {!settings.orderingEnabled && (
@@ -325,12 +361,13 @@ export function CheckoutForm({ settings, todayDate, preorderDates }: CheckoutFor
               />
             </label>
 
-            <div className="sm:col-span-2">
+            {/* <div className="sm:col-span-2">
               <LocationPicker
                 value={selectedLocation}
                 onChange={setSelectedLocation}
+                setLocation={setCity}
               />
-            </div>
+            </div> */}
 
             <label
               className={`flex flex-col gap-1.5 sm:col-span-2 ${labelClass}`}
