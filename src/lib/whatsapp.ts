@@ -1,11 +1,17 @@
-/** Build a WhatsApp click-to-chat URL from the store's public settings. */
+/**
+ * Build a WhatsApp click-to-chat URL from the store's public settings.
+ * Accepts Arabic numbers, +, spaces and separators; only digits are used.
+ */
 export function buildWhatsAppUrl(
   rawPhone: string,
-  message: string,
+  message?: string,
 ): string | null {
   const phone = rawPhone.replace(/\D/g, "");
   if (!phone) return null;
-  return `https://wa.me/${phone}?text=${encodeURIComponent(message)}`;
+  const base = `https://wa.me/${phone}`;
+  return message && message.trim()
+    ? `${base}?text=${encodeURIComponent(message)}`
+    : base;
 }
 
 export function buildPaymentProofMessage(
