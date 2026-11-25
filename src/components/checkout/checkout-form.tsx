@@ -4,10 +4,6 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useState, type FormEvent } from "react";
 import { PaymentProofUpload } from "@/components/checkout/payment-proof-upload";
-import {
-  LocationPicker,
-  type SelectedLocation,
-} from "@/components/checkout/location-picker";
 import { createOrder } from "@/app/actions/orders";
 import { formatPrice, productName } from "@/lib/format";
 import { ORDER_MODE_LABELS, type OrderMode } from "@/lib/order-mode";
@@ -31,31 +27,14 @@ const labelClass = "text-[13px] font-semibold text-[#493a34]";
 const confirmationStorageKey = "golden-glaze-last-order";
 const maxAddressLength = 500;
 
-function combineDeliveryAddress(
-  city: string,
-  detailed: string,
-  readable: string,
-): string {
+function combineDeliveryAddress(city: string, detailed: string): string {
   const clean = (value: string) => value.trim().replace(/\s+/g, " ");
   const cityPart = clean(city);
   const detailedPart = clean(detailed);
-  let readablePart = clean(readable);
-
-  // Nominatim often repeats the governorate; keep each piece only once but
-  // never drop the customer's own detailed address.
-  if (cityPart && readablePart.includes(cityPart)) {
-    readablePart = readablePart
-      .split(cityPart)
-      .join(" ")
-      .replace(/\s+/g, " ")
-      .replace(/^[\s،,]+|[\s،,]+$/g, "")
-      .trim();
-  }
 
   return [
     cityPart ? `المنطقة: ${cityPart}` : "",
     detailedPart ? `العنوان التفصيلي: ${detailedPart}` : "",
-    readablePart ? `الموقع على الخريطة: ${readablePart}` : "",
   ]
     .filter(Boolean)
     .join("\n");
@@ -79,8 +58,6 @@ export function CheckoutForm({
   );
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [error, setError] = useState("");
-  const [selectedLocation, setSelectedLocation] =
-    useState<SelectedLocation | null>(null);
   const selectedFulfillmentDate =
     mode === "preorder"
       ? (preorderDates.find((option) => option.value === preorderDate)?.value ??
@@ -106,8 +83,7 @@ export function CheckoutForm({
     settings.deliveryAreas.length > 0 &&
     hasHydrated &&
     items.length > 0 &&
-    stockIsValid &&
-    selectedLocation !== null;
+    stockIsValid;
 
   async function handleSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -123,11 +99,6 @@ export function CheckoutForm({
       );
       return;
     }
-    if (!selectedLocation) {
-      setError("حدد موقع التوصيل على الخريطة قبل تأكيد الطلب.");
-      return;
-    }
-
     setIsSubmitting(true);
     try {
       const formData = new FormData(event.currentTarget);
@@ -135,18 +106,14 @@ export function CheckoutForm({
         typeof formData.get("address") === "string"
           ? String(formData.get("address"))
           : "";
-      const fullAddress = combineDeliveryAddress(
-        city,
-        detailedAddress,
-        selectedLocation.readableAddress,
-      );
+      const fullAddress = combineDeliveryAddress(city, detailedAddress);
       if (fullAddress.length < 8) {
         setError("اكتب عنوان توصيل واضحًا قبل تأكيد الطلب.");
         return;
       }
       if (fullAddress.length > maxAddressLength) {
         setError(
-          "العنوان الإجمالي (المنطقة + العنوان التفصيلي + الموقع على الخريطة) تجاوز 500 حرف. قصّر العنوان التفصيلي حتى يُحفظ كاملًا دون حذف أي جزء.",
+          "العنوان الإجمالي (المنطقة + العنوان التفصيلي) تجاوز 500 حرف. قصّر العنوان التفصيلي حتى يُحفظ كاملًا دون حذف أي جزء.",
         );
         return;
       }
@@ -361,14 +328,6 @@ export function CheckoutForm({
               />
             </label>
 
-            {/* <div className="sm:col-span-2">
-              <LocationPicker
-                value={selectedLocation}
-                onChange={setSelectedLocation}
-                setLocation={setCity}
-              />
-            </div> */}
-
             <label
               className={`flex flex-col gap-1.5 sm:col-span-2 ${labelClass}`}
               htmlFor="notes"
@@ -438,11 +397,6 @@ export function CheckoutForm({
           {!stockIsValid && (
             <p className="mt-4 text-[12px] text-[#8a5a1f]" role="status">
               الكمية المطلوبة غير متاحة اليوم، أو لم يُحدد مخزون اليوم بعد.
-            </p>
-          )}
-          {!selectedLocation && (
-            <p className="mt-4 text-[12px] text-[#8a5a1f]" role="status">
-              يجب تحديد موقع التوصيل على الخريطة قبل تأكيد الطلب.
             </p>
           )}
           <button
