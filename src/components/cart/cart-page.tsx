@@ -6,6 +6,7 @@ import { formatPrice, productName } from "@/lib/format";
 import { ORDER_MODE_LABELS } from "@/lib/order-mode";
 import type { PreorderDateOption } from "@/lib/preorder-dates";
 import { OrderModeSelector } from "@/components/welcome/buttons";
+import { CartPageSkeleton } from "@/components/cart/cart-page-skeleton";
 import {
   MAX_CART_QUANTITY,
   selectCartItemCount,
@@ -44,15 +45,7 @@ export function CartPage({
   }, [hasHydrated, items, mode, removeItem, updateQuantity]);
 
   if (!hasHydrated) {
-    return (
-      <main
-        className="mx-auto min-h-[58vh] w-[calc(100%-2rem)] max-w-5xl py-10"
-        aria-busy="true"
-        aria-live="polite"
-      >
-        جاري تحميل السلة...
-      </main>
-    );
+    return <CartPageSkeleton />;
   }
 
   if (items.length === 0) {

@@ -1,27 +1,15 @@
 import { Suspense } from "react";
 import { CheckoutForm } from "@/components/checkout/checkout-form";
+import { CheckoutPageSkeleton } from "@/components/checkout/checkout-page-skeleton";
 import { createClient } from "@/utils/supabase/server";
 import { parseStorefrontSettings } from "@/lib/storefront-settings";
 import { connection } from "next/server";
 import { cairoBusinessDate } from "@/lib/order-mode";
 import { getPreorderDateOptions } from "@/lib/preorder-dates";
 
-function CheckoutLoading() {
-  return (
-    <main className="mx-auto min-h-[58vh] w-[calc(100%-2rem)] max-w-5xl py-10">
-      <p
-        className="rounded-lg border border-line bg-white p-5 text-sm"
-        role="status"
-      >
-        جارٍ تحميل إعدادات التوصيل والدفع...
-      </p>
-    </main>
-  );
-}
-
 export default function CheckoutPage() {
   return (
-    <Suspense fallback={<CheckoutLoading />}>
+    <Suspense fallback={<CheckoutPageSkeleton />}>
       <CheckoutContent />
     </Suspense>
   );
