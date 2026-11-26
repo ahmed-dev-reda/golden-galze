@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, type FormEvent } from "react";
+import { Copy, Loader2 } from "lucide-react";
 import { trackGuestOrder, type TrackOrderResult } from "@/app/actions/orders";
 import { formatPrice, productName } from "@/lib/format";
 
@@ -14,6 +15,13 @@ const statusLabels: Record<string, string> = {
   DELIVERED: "تم التوصيل",
   CANCELLED: "تم إلغاء الطلب",
 };
+const trackingSteps = [
+  "PENDING",
+  "CONFIRMED",
+  "PREPARING",
+  "OUT_FOR_DELIVERY",
+  "DELIVERED",
+];
 
 function paymentLabel(method: string): string {
   if (method === "cash") return "الدفع عند الاستلام";
@@ -21,17 +29,66 @@ function paymentLabel(method: string): string {
   return method;
 }
 
+function TrackingTimeline({ status }: { status: string }) {
+  const current = status.toUpperCase();
+  if (current === "CANCELLED") {
+    return (
+      <p className="mb-4 mt-4 rounded-md bg-[#fff1f1] p-3 text-sm font-semibold text-[#9b2939]">
+        تم إلغاء الطلب. تواصل مع المتجر للمساعدة.
+      </p>
+    );
+  }
+
+  const currentIndex = trackingSteps.indexOf(current);
+  return (
+    <ol className="mb-5 mt-4 grid gap-2" aria-label="مراحل الطلب">
+      {trackingSteps.map((step, index) => (
+        <li
+          key={step}
+          className={`flex items-center gap-2 text-[13px] ${
+            index <= currentIndex ? "font-semibold text-brand" : "text-muted"
+          }`}
+        >
+          <span
+            className={`grid size-5 shrink-0 place-items-center rounded-full border text-[10px] ${
+              index <= currentIndex
+                ? "border-brand bg-brand text-white"
+                : "border-field-line bg-white"
+            }`}
+            aria-hidden="true"
+          >
+            {index + 1}
+          </span>
+          {statusLabels[step]}
+        </li>
+      ))}
+    </ol>
+  );
+}
+
 export function TrackOrderForm() {
   const [result, setResult] = useState<TrackOrderResult | null>(null);
   const [isLoading, setIsLoading] = useState(false);
+  const [formError, setFormError] = useState("");
+  const [copyStatus, setCopyStatus] = useState("");
 
   async function handleSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
+    setFormError("");
+    setCopyStatus("");
+
+    const data = new FormData(event.currentTarget);
+    const orderId = String(data.get("orderId") ?? "").trim();
+    const phone = String(data.get("phone") ?? "").trim();
+    if (!orderId || !phone) {
+      setFormError("أدخل رقم الطلب ورقم الهاتف معًا للبحث.");
+      return;
+    }
+
     setIsLoading(true);
     setResult(null);
-
     try {
-      const response = await trackGuestOrder(new FormData(event.currentTarget));
+      const response = await trackGuestOrder(data);
       setResult(response);
     } catch (error) {
       console.error("Order tracking request failed.", error);
@@ -41,6 +98,16 @@ export function TrackOrderForm() {
       });
     } finally {
       setIsLoading(false);
+    }
+  }
+
+  async function copyOrderId() {
+    if (!result?.ok) return;
+    try {
+      await navigator.clipboard.writeText(result.order.orderId);
+      setCopyStatus("تم نسخ رقم الطلب.");
+    } catch {
+      setCopyStatus("تعذر النسخ تلقائيًا. انسخ الرقم يدويًا.");
     }
   }
 
@@ -58,6 +125,7 @@ export function TrackOrderForm() {
             name="orderId"
             dir="ltr"
             autoComplete="off"
+            disabled={isLoading}
             required
             aria-describedby="tracking-help"
           />
@@ -74,18 +142,32 @@ export function TrackOrderForm() {
             type="tel"
             inputMode="tel"
             autoComplete="tel"
+            disabled={isLoading}
             required
           />
         </label>
         <p id="tracking-help" className="m-0 text-xs leading-6 text-muted">
-          رقم الطلب هو الرمز الكامل الظاهر في رسالة تأكيد الطلب.
+          رقم الطلب هو الرمز الكامل الظاهر في رسالة تأكيد الطلب، والهاتف هو
+          الرقم الذي استخدمته عند الطلب.
         </p>
+        {formError && (
+          <p className="m-0 text-xs text-[#9b2939]" role="alert">
+            {formError}
+          </p>
+        )}
         <button
-          className="inline-flex min-h-11 items-center justify-center rounded-lg bg-brand px-5 font-semibold text-white transition-colors hover:bg-brand-hover disabled:cursor-wait disabled:opacity-60"
+          className="inline-flex min-h-11 items-center justify-center gap-2 rounded-lg bg-brand px-5 font-semibold text-white transition-colors hover:bg-brand-hover disabled:cursor-wait disabled:opacity-60"
           type="submit"
           disabled={isLoading}
         >
-          {isLoading ? "جارٍ البحث..." : "تتبع الطلب"}
+          {isLoading ? (
+            <>
+              <Loader2 className="size-4 animate-spin" aria-hidden="true" />
+              جارٍ البحث...
+            </>
+          ) : (
+            "تتبع الطلب"
+          )}
         </button>
       </form>
 
@@ -104,15 +186,32 @@ export function TrackOrderForm() {
           <div className="flex flex-wrap items-start justify-between gap-3">
             <div>
               <p className="m-0 text-xs text-muted">رقم الطلب</p>
-              <p className="mt-1 break-all font-semibold" dir="ltr">
-                {result.order.orderId}
-              </p>
+              <div className="mt-1 flex flex-wrap items-center gap-2">
+                <p className="break-all font-semibold" dir="ltr">
+                  {result.order.orderId}
+                </p>
+                <button
+                  className="inline-flex min-h-8 items-center gap-1 rounded-md border border-field-line bg-white px-2 text-[11px] font-semibold text-warm hover:bg-brand-light"
+                  type="button"
+                  onClick={() => void copyOrderId()}
+                >
+                  <Copy className="size-3.5" aria-hidden="true" />
+                  نسخ
+                </button>
+              </div>
+              {copyStatus && (
+                <p className="mb-0 mt-1 text-[11px] text-muted" role="status">
+                  {copyStatus}
+                </p>
+              )}
             </div>
             <p className="m-0 rounded-full bg-brand-light px-3 py-1 text-sm font-semibold text-brand">
               {statusLabels[result.order.status.toUpperCase()] ??
                 result.order.status}
             </p>
           </div>
+
+          <TrackingTimeline status={result.order.status} />
 
           <p className="mb-3 mt-4 text-sm">
             تاريخ الطلب:{" "}
@@ -128,7 +227,8 @@ export function TrackOrderForm() {
           </p>
           {result.order.paymentMethod === "instapay" && (
             <p className="mb-3 text-sm">
-              إثبات الدفع: {result.order.paymentProof ? "تم استلامه" : "بانتظار الإيصال"}
+              إثبات الدفع:{" "}
+              {result.order.paymentProof ? "تم استلامه" : "بانتظار الإيصال"}
             </p>
           )}
 
