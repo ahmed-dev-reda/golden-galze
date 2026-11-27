@@ -150,7 +150,7 @@ export function OrderModeSelector({
               disabled={!hasHydrated}
               aria-pressed={selected}
               onClick={() => choose(option)}
-              className={`flex min-h-[110px] flex-col items-start gap-1 rounded-lg border p-4 text-right transition-colors disabled:opacity-60 ${
+              className={`flex flex-col items-start gap-1 rounded-lg border p-4 text-right transition-colors disabled:opacity-60 ${
                 selected
                   ? "border-brand bg-brand-light"
                   : "border-line bg-white hover:border-brand-accent"

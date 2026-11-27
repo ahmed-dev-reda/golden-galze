@@ -261,7 +261,10 @@ export async function createOrder(
   if (!isOrderMode(orderMode)) {
     return { ok: false, message: "نوع الطلب غير صالح." };
   }
-  if (items && items.some((item) => item.mode !== undefined && item.mode !== orderMode)) {
+  if (
+    items &&
+    items.some((item) => item.mode !== undefined && item.mode !== orderMode)
+  ) {
     return {
       ok: false,
       message: "لا يمكن خلط دوناتس النهاردة مع الحجز لبكرة في نفس الطلب.",
@@ -336,11 +339,13 @@ export async function createOrder(
     }
 
     const stockById = new Map(
-      (stockRows ?? []).map((row: {
-        id: string;
-        today_stock: number | string | null;
-        is_available: boolean;
-      }) => [row.id, row]),
+      (stockRows ?? []).map(
+        (row: {
+          id: string;
+          today_stock: number | string | null;
+          is_available: boolean;
+        }) => [row.id, row],
+      ),
     );
 
     for (const item of items) {
@@ -371,7 +376,6 @@ export async function createOrder(
     p_notes: notes,
     p_payment_method: paymentMethod,
     p_items: items.map(({ id, quantity }) => ({ id, quantity })),
-    p_order_mode: orderMode,
   });
 
   if (error) {
